@@ -113,6 +113,31 @@ export function detailText(d, analysis, index, total) {
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }
 
+export function versionText(finding, { esc = escape } = {}) {
+  const fresh = finding.apps.filter((s) => s.change === "new");
+  const header = fresh.length
+    ? `:white_check_mark: *Monitor de Crashlytics activo* · ${fresh.length === 1 ? "versión nueva" : "versiones nuevas"}: ${fresh
+        .map((s) => `${esc(s.app)} ${esc(s.latestVersion)}`)
+        .join(", ")}`
+    : ":white_check_mark: *Monitor de Crashlytics activo*";
+  const lines = [header];
+  for (const s of finding.apps) {
+    if (s.error) lines.push(`${esc(s.app)}: no se pudo revisar`);
+    else if (!s.latestVersion) lines.push(`${esc(s.app)}: sin datos en Crashlytics`);
+    else if (s.change === "new") {
+      lines.push(
+        `*${esc(s.app)} ${esc(s.latestVersion)}*: versión nueva (antes ${esc(s.previousVersion)}), ${plural(s.issues, "issue", "issues")} con eventos hasta ahora`
+      );
+    } else if (s.change === "first") {
+      lines.push(`${esc(s.app)} ${esc(s.latestVersion)}: ${plural(s.issues, "issue existente registrado", "issues existentes registrados")}`);
+    } else {
+      lines.push(`${esc(s.app)} ${esc(s.latestVersion)}: ${plural(s.issues, "issue", "issues")} con eventos en esta versión`);
+    }
+  }
+  lines.push("Desde ahora reporto cada falla con eventos nuevos en la última versión, sin importar su gravedad.");
+  return truncate(lines.join("\n"), MESSAGE_LIMIT);
+}
+
 export function errorText(message, { esc = escape } = {}) {
   return `:x: *El monitor de Crashlytics no pudo revisar*\n\`\`\`${esc(truncate(message, 2500))}\`\`\``;
 }

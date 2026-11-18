@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { parseArgs } from "node:util";
 import { readJson, writeJson } from "./files.js";
-import { errorText, neutralize, summaryText } from "./format.js";
+import { errorText, neutralize, summaryText, versionText } from "./format.js";
 import { slackClient } from "./slack.js";
 
 const { values: args } = parseArgs({
@@ -16,8 +16,10 @@ const { values: args } = parseArgs({
 const result = readJson(args.result);
 const failures = result.findings.filter((f) => f.type === "failure");
 const errors = result.findings.filter((f) => f.type === "error");
+const version = result.findings.find((f) => f.type === "new_version");
 
 const messages = errors.map((e) => errorText(e.message, { esc: neutralize }));
+if (version) messages.push(versionText(version, { esc: neutralize }));
 if (failures.length) {
   const ref = `CR-${randomBytes(3).toString("hex").toUpperCase()}`;
   messages.push(summaryText(result, failures, { esc: neutralize, ref }));

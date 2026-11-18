@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { releaseVersions, topIssues } from "./crashlytics.js";
-import { countingSince, detectApp, errorFinding, normalizeState } from "./detect.js";
+import { countingSince, detectApp, errorFinding, normalizeState, versionChange, versionFinding } from "./detect.js";
 import { readJson, writeJson } from "./files.js";
 
 const { values: args } = parseArgs({
@@ -40,19 +40,25 @@ for (const app of config.apps) {
     });
     nextState.apps[app.appId] = appState;
     findings.push(...appFindings);
+    const change = versionChange(prevAppState, latest.displayName);
     appStatus.push({
       app: app.name,
       latestVersion: latest.displayName,
-      status: prevAppState ? "ok" : "primera revisión: solo se registraron los contadores",
+      previousVersion: change === "new" ? prevAppState.version : null,
+      change,
+      issues: Object.keys(appState.counts).length,
+      status: prevAppState ? (change ? `versión nueva (antes ${prevAppState.version})` : "ok") : "primera revisión: solo se registraron los contadores",
       failures: appFindings.length,
     });
   } catch (err) {
     errors.push({ app: app.name, message: err.message });
-    appStatus.push({ app: app.name, status: `error: ${err.message}` });
+    appStatus.push({ app: app.name, status: `error: ${err.message}`, error: true });
   }
 }
 
 findings.sort((a, b) => b.newEvents - a.newEvents);
+const version = versionFinding(appStatus);
+if (version) findings.unshift(version);
 
 if (errors.length) {
   const byMessage = new Map();
@@ -82,5 +88,6 @@ const failures = findings.filter((f) => f.type === "failure");
 console.log(`Revisión ${result.checkedAt}`);
 for (const s of appStatus) console.log(`- ${s.app}: ${s.latestVersion ?? "-"} (${s.status})`);
 console.log(`Fallas: ${failures.length}`);
+if (version) console.log("Versión nueva: se publicará el mensaje de monitor activo.");
 if (findings.some((f) => f.type === "error")) console.log("Error del monitor: se reportará.");
 console.log(`Resultado: ${args.out} | Estado nuevo: ${args["next-state"]}`);

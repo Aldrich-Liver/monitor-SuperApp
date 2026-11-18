@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { cacheKey, mergeCache } from "../src/analyst/cache.js";
-import { countingSince, detectApp, errorFinding, normalizeAnalysis, normalizeState } from "../src/detect.js";
-import { detailText, handoffText, neutralize, shortTitle, summaryText } from "../src/format.js";
+import {
+  countingSince,
+  detectApp,
+  errorFinding,
+  normalizeAnalysis,
+  normalizeState,
+  versionChange,
+  versionFinding,
+} from "../src/detect.js";
+import { detailText, handoffText, neutralize, shortTitle, summaryText, versionText } from "../src/format.js";
 
 const app = { name: "Super App Android", appId: "1:1:android:abc", sourceRepo: "sw-crp-super-app-android" };
 const now = new Date("2026-11-18T18:00:00Z");
@@ -66,6 +74,34 @@ test("counting window stays fixed per version and restarts after 85 days", () =>
   assert.equal(countingSince(old, V, now, 7).reset, true);
   const reset = detectApp({ app, prevAppState: old, version: V, since: SINCE, reset: true, issues: [issue("a", 9)] });
   assert.equal(reset.findings.length, 0);
+});
+
+test("a new or first-seen version produces the monitor-active message with every app", () => {
+  assert.equal(versionChange(undefined, V), "first");
+  assert.equal(versionChange({ version: V }, V), null);
+  assert.equal(versionChange({ version: "1.5.4 (289)" }, V), "new");
+
+  const steady = [{ app: "Super App iOS", latestVersion: "1.5.6 (291)", change: null, issues: 0 }];
+  assert.equal(versionFinding(steady), null);
+
+  const apps = [
+    { app: "Super App Android", latestVersion: "1.5.6 (291)", previousVersion: "1.5.5 (290)", change: "new", issues: 2 },
+    ...steady,
+    { app: "Contacto Logístico Android", latestVersion: null, status: "sin datos en Crashlytics" },
+    { app: "Contacto Logístico iOS", latestVersion: "1.0.0 (1)", change: "first", issues: 1 },
+  ];
+  const text = versionText(versionFinding(apps));
+  assert.equal(
+    text,
+    [
+      ":white_check_mark: *Monitor de Crashlytics activo* · versión nueva: Super App Android 1.5.6 (291)",
+      "*Super App Android 1.5.6 (291)*: versión nueva (antes 1.5.5 (290)), 2 issues con eventos hasta ahora",
+      "Super App iOS 1.5.6 (291): 0 issues con eventos en esta versión",
+      "Contacto Logístico Android: sin datos en Crashlytics",
+      "Contacto Logístico iOS 1.0.0 (1): 1 issue existente registrado",
+      "Desde ahora reporto cada falla con eventos nuevos en la última versión, sin importar su gravedad.",
+    ].join("\n")
+  );
 });
 
 test("old or invalid state starts over", () => {

@@ -66,6 +66,18 @@ export function detectApp({ app, prevAppState, version, since, reset, issues }) 
   return { findings, appState: { version, since, counts } };
 }
 
+/** How an app's latest version moved since the previous check: "first" (no previous data), "new" or null. */
+export function versionChange(prevAppState, version) {
+  if (!prevAppState) return "first";
+  return prevAppState.version === version ? null : "new";
+}
+
+/** One "monitor active" message whenever any app shows a version it didn't have before. */
+export function versionFinding(appStatus) {
+  if (!appStatus.some((s) => s.change)) return null;
+  return { type: "new_version", apps: appStatus };
+}
+
 export function errorFinding(message, prevError, now) {
   const repeat =
     prevError && prevError.message === message && now.getTime() - Date.parse(prevError.at) < ERROR_REPEAT_MS;
