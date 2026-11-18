@@ -45,8 +45,8 @@ Node.js 20 o superior. No hay dependencias que instalar.
 | `SLACK_BOT_TOKEN` | Token `xoxb-…` del bot de Slack que publica. Necesita el permiso `chat:write` y estar invitado al canal. |
 | `SLACK_CHANNEL` | ID del canal (`C…`) de `#team-mobile`. |
 | `ANALYST_WEBHOOK_URL`, `ANALYST_WEBHOOK_KEY` | URL y llave del webhook de la automatización Analista Crashlytics. |
-| `SLACK_ANALYST_MENTION` | Opcional: la mención `<@U…>` del bot del Analista, para que el hilo lo arrobe de verdad. |
-| `SLACK_ANALYST_BOT_TOKEN` | Opcional: token del bot del Analista, para que sus respuestas salgan con su propio nombre. Sin este token, responde el bot del monitor. |
+| `SLACK_ANALYST_BOT_TOKEN` | Opcional: token del bot del Analista. Con él, el hilo arroba al Analista y sus respuestas salen con su propio nombre. Sin él, el hilo lo nombra en negritas y responde el bot del monitor. |
+| `SLACK_ANALYST_MENTION` | Opcional: fija la mención (`<@U…>`) en vez de obtenerla del token del Analista. |
 
 ## Uso local
 
@@ -73,10 +73,10 @@ La herramienta Send to Slack de las automatizaciones no devuelve el identificado
 1. En [api.slack.com/apps](https://api.slack.com/apps), elige **Create New App > From a manifest**, selecciona el workspace y pega [`slack/monitor-manifest.json`](slack/monitor-manifest.json). Ya trae el nombre y el único permiso que usa, `chat:write`.
 2. Revisa el resumen y haz clic en **Create**.
 3. En **Install App**, haz clic en **Install to Workspace** y copia el **Bot User OAuth Token** (`xoxb-…`) al secreto `SLACK_BOT_TOKEN`.
-4. En `#team-mobile`, escribe `/invite @Monitor Crashlytics`.
+4. En `#team-mobile`, escribe `/invite @Monitor Crashlytics`. El bot aparece en los detalles del canal, en **Integraciones > Aplicaciones**, no en la lista de miembros.
 5. Para el ID del canal, abre los detalles de `#team-mobile`; el ID (`C…`) está al final. Guárdalo en el secreto `SLACK_CHANNEL`.
 
-Opcional: para que el Analista aparezca como un usuario aparte y se pueda arrobar, crea una segunda app con los mismos pasos y [`slack/analyst-manifest.json`](slack/analyst-manifest.json). Guarda su token en `SLACK_ANALYST_BOT_TOKEN` y su mención en `SLACK_ANALYST_MENTION`, con el formato `<@U…>` y el Member ID que aparece en su perfil. Sin estos secretos, el hilo nombra al Analista en negritas y el bot del monitor publica sus respuestas.
+Opcional: para que el Analista aparezca como un usuario aparte y se pueda arrobar, crea una segunda app con los mismos pasos y [`slack/analyst-manifest.json`](slack/analyst-manifest.json). Guarda su token en `SLACK_ANALYST_BOT_TOKEN`; el monitor obtiene de ahí la mención. Sin ese secreto, el hilo nombra al Analista en negritas y el bot del monitor publica sus respuestas.
 
 ### 2. Automatización Analista Crashlytics
 

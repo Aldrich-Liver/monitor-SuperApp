@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { readJson } from "./files.js";
 import { analystUnavailableText, errorText, handoffText, summaryText } from "./format.js";
-import { slackClient, triggerWebhook } from "./slack.js";
+import { botMention, slackClient, triggerWebhook } from "./slack.js";
 
 const { values: args } = parseArgs({
   options: {
@@ -36,12 +36,22 @@ async function post(text, threadTs) {
   return slack.post(text, threadTs);
 }
 
+async function analystMention() {
+  const explicit = process.env.SLACK_ANALYST_MENTION?.trim();
+  if (explicit) return explicit;
+  if (dryRun) return null;
+  return botMention(process.env.SLACK_ANALYST_BOT_TOKEN).catch((err) => {
+    console.error(`No se pudo obtener la mención del Analista: ${err.message}`);
+    return null;
+  });
+}
+
 for (const e of errors) await post(errorText(e.message));
 
 if (failures.length) {
   const analyzed = failures.slice(0, config.maxAnalyzedFailures);
   const parent = await post(summaryText(result, failures));
-  const mention = process.env.SLACK_ANALYST_MENTION?.trim() || null;
+  const mention = await analystMention();
   // From here on the summary is already in the channel: failing would make the next run repeat it.
   await post(handoffText({ count: failures.length, analyzed: analyzed.length, mention }), parent.ts).catch((err) =>
     console.error(`No se pudo publicar la mención en el hilo: ${err.message}`)

@@ -31,6 +31,19 @@ export function slackClient({ token, channel } = {}) {
   };
 }
 
+/** `<@U…>` for the bot behind a token, so the thread can mention the analyst without copying its member ID. */
+export async function botMention(token) {
+  token = clean(token);
+  if (!token) return null;
+  const res = await fetch("https://slack.com/api/auth.test", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await res.json();
+  if (!body.ok) throw new Error(`Slack auth.test: ${body.error}`);
+  return `<@${body.user_id}>`;
+}
+
 export async function triggerWebhook(payload) {
   const url = clean(process.env.ANALYST_WEBHOOK_URL);
   const key = clean(process.env.ANALYST_WEBHOOK_KEY);
