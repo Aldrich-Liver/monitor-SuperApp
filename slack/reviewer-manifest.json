@@ -1,0 +1,23 @@
+{
+  "display_information": {
+    "name": "Revisor Crashlytics",
+    "description": "Revisa en el hilo los PR que corrigen fallas de Crashlytics, según los lineamientos de cada app.",
+    "background_color": "#2e6b3a"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Revisor Crashlytics",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": ["chat:write"]
+    }
+  },
+  "settings": {
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

@@ -2,10 +2,11 @@
 
 Revisa cada hora la última versión de Super App y Contacto Logístico (Android e iOS) en el proyecto de Firebase `crp-dev-dig-superapp`. Si hay fallas con eventos nuevos, ya sean crashes, no fatales o ANR, nuevas o conocidas, las reporta en Slack (`#team-mobile`). Si no hay fallas, no publica nada.
 
-Funciona con dos automatizaciones de Cursor en el environment **Super App**:
+Funciona con tres automatizaciones de Cursor en el environment **Super App**:
 
 1. **Monitor Crashlytics**, programada cada hora. Ejecuta `npm run check` y `npm run render`, y publica el reporte (un mensaje corto con la lista de fallas) como Cursor, con la herramienta Send to Slack. Luego `npm run notify` encuentra ese reporte en el canal por su `Ref. CR-…`, menciona al Analista en el hilo con el bot del monitor y activa al Analista por webhook con los datos de las fallas.
 2. **Analista Crashlytics**, activada por webhook. Ejecuta `npm run details`, lee el código del commit con el que se compiló la versión y escribe la causa y la solución propuesta en palabras simples. Con `npm run reply` responde en el hilo una vez por falla.
+3. **Revisor Crashlytics**, activada por webhook. Revisa el PR que corrige una falla contra los lineamientos del repo de la app (`AGENTS.md` y `.cursor/rules`), da el visto bueno o pide solo los cambios necesarios, comenta en el PR de GitHub y responde en el hilo.
 
 ```
 :rotating_light: 1 falla en Crashlytics · 5 eventos nuevos entre 11:04 a.m. y 12:04 p.m. (hora CDMX)
@@ -31,6 +32,30 @@ Funciona con dos automatizaciones de Cursor en el environment **Super App**:
 - **Errores del monitor**, por ejemplo credenciales vencidas: los reporta en el canal, pero el mismo error no se repite antes de 6 horas.
 - El Analista revisa como máximo las 8 fallas con más eventos (`maxAnalyzedFailures`). Guarda cada análisis por issue y versión, y si la misma falla vuelve a aparecer lo reutiliza en vez de volver a leer el código.
 
+## Revisión de PR
+
+Quien corrige una falla pega el enlace del PR en el hilo de esa falla y pide la revisión de una de estas formas:
+
+- **Arrobando a Cursor:** `@Cursor revisa este PR https://github.com/…/pull/12`. Cursor lee [`AGENTS.md`](AGENTS.md), ejecuta `npm run review:request -- <URL>` y el comando encuentra el hilo por el enlace. La revisión empieza en segundos.
+- **Arrobando al bot:** `@Revisor Crashlytics https://github.com/…/pull/12`. El bot no recibe eventos de Slack, así que el monitor, en su corrida de cada hora, encuentra la mención con `npm run review:scan` y activa la revisión.
+- **Desde otra automatización:** `npm run review:request -- <URL> --thread <ts del hilo>`, o un POST al webhook del Revisor con el payload que imprime `npm run review:request -- <URL> --dry-run`.
+
+En el hilo, el Revisor avisa que empezó (`:eyes:`) y después publica el veredicto:
+
+```
+:warning: Cambios necesarios · PR #12 · Super App Android · fix/remote-config-timeout
+@quien-pidió Sube la espera de Remote Config, pero atrapa el error sin reintentar.
+¿Corrige la falla del hilo? Parcialmente: la app ya no se traba, pero la configuración sigue sin cargar.
+1. ArranqueAnfitrion.kt:55 · Se ignora el timeout sin registrar el evento…
+   Sugerencia: …
+   Lineamiento: AGENTS.md §5.3
+Los mismos comentarios están en el PR de GitHub.
+```
+
+Solo cuenta como cambio necesario un error que provoque un crash, una regresión, datos incorrectos o un problema de seguridad; algo que rompa un lineamiento que aplica; que no corrija la falla del hilo; o que falte el PR gemelo en la otra plataforma. Los gustos de estilo no cuentan. El Revisor no ejecuta código del PR ni cambia nada en los repos.
+
+El Revisor descarga el PR con git (`refs/pull/N/head`), así que solo revisa PRs de repos que puede clonar el environment Super App. Para la rama base usa la rama por defecto del repo (`main`), salvo que la solicitud traiga otra.
+
 ## Requisitos
 
 Node.js 20 o superior. No hay dependencias que instalar.
@@ -47,6 +72,8 @@ Node.js 20 o superior. No hay dependencias que instalar.
 | `ANALYST_WEBHOOK_URL`, `ANALYST_WEBHOOK_KEY` | URL y llave del webhook de la automatización Analista Crashlytics. |
 | `SLACK_ANALYST_BOT_TOKEN` | Opcional: token del bot del Analista. Con él, el hilo arroba al Analista y sus respuestas salen con su propio nombre. Sin él, el hilo lo nombra en negritas y responde el bot del monitor. |
 | `SLACK_ANALYST_MENTION` | Opcional: fija la mención (`<@U…>`) en vez de obtenerla del token del Analista. |
+| `REVIEWER_WEBHOOK_URL`, `REVIEWER_WEBHOOK_KEY` | URL y llave del webhook de la automatización Revisor Crashlytics. |
+| `SLACK_REVIEWER_BOT_TOKEN` | Token del bot del Revisor. Con él, el Revisor responde con su propio nombre y `review:scan` encuentra sus menciones. Sin él, responde el bot del Analista o el del monitor. |
 
 ## Uso local
 
@@ -67,6 +94,14 @@ npm run notify -- --result .monitor/test-result.json
 npm run details                              # escribe .analyst/details.json
 # escribe .analyst/analysis.json: { "<key>": { "cause": "...", "fix": "..." } }
 npm run reply -- --dry-run
+
+# Revisor: pedir una revisión (busca el hilo por el enlace) y preparar el contexto
+npm run review:request -- https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/2 --dry-run
+# el payload que imprimió va en .reviewer/payload.json
+npm run review:context                       # escribe .reviewer/context.json y .reviewer/diff.patch
+# escribe .reviewer/review.json: { "verdict": "approve" | "changes", "summary": "...", "items": [...] }
+npm run review:reply -- --dry-run
+npm run review:scan -- --dry-run             # menciones al bot del Revisor sin responder
 npm test
 ```
 
@@ -101,6 +136,17 @@ En [cursor.com/automations](https://cursor.com/automations):
 - **Herramientas:** Memories y Send to Slack, con el canal fijo `#team-mobile`.
 - **Prompt:** [`automation/monitor-prompt.md`](automation/monitor-prompt.md).
 - **Modelo:** uno rápido y económico; solo ejecuta comandos.
+
+### 4. Revisor Crashlytics
+
+1. Crea la app de Slack con los pasos del bot, usando [`slack/reviewer-manifest.json`](slack/reviewer-manifest.json). Guarda su token en `SLACK_REVIEWER_BOT_TOKEN` e invítala con `/invite @Revisor Crashlytics`.
+2. Crea la automatización:
+   - **Disparador:** Webhook. Copia la URL y la llave a `REVIEWER_WEBHOOK_URL` y `REVIEWER_WEBHOOK_KEY`.
+   - **Environment:** Super App.
+   - **Herramientas:** Comment on pull request, con aprobaciones activadas para que pueda aprobar o pedir cambios.
+   - **Prompt:** [`automation/reviewer-prompt.md`](automation/reviewer-prompt.md).
+   - **Modelo:** uno fuerte en revisión de código.
+3. Para que `@Cursor` corra en el environment Super App al pedir una revisión, agrega en el dashboard de Cursor, en **Cloud Agents**, una regla de enrutamiento (routing rule) con la palabra `revisa` apuntando al environment Super App, o escribe `env="Super App"` en el mensaje.
 
 Todos los secretos van en **Cloud Agents > Secrets** como Runtime Secret, disponibles para el environment Super App.
 

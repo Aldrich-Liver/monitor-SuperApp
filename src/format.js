@@ -145,3 +145,45 @@ export function errorText(message, { esc = escape } = {}) {
 export function threadHeaderText(ref) {
   return `:thread: Detalle de la alerta de Crashlytics Ref. ${ref}`;
 }
+
+const MAX_REVIEW_ITEMS = 6;
+
+const prLink = (pr) => `<${pr.url}|PR #${pr.number}>`;
+const userMention = (id) => (id && /^[UW][A-Z0-9]+$/.test(id) ? `<@${id}> ` : "");
+
+export function reviewAckText({ pr, app, requester }) {
+  return `:eyes: ${userMention(requester)}Reviso el ${prLink(pr)} de ${escape(app)} contra los lineamientos del repo. Respondo en este hilo en unos minutos.`;
+}
+
+export function reviewerUnavailableText(reason) {
+  return `:warning: No se pudo activar al Revisor Crashlytics: ${escape(reason)}`;
+}
+
+function reviewItem(item, n) {
+  const where = item.file ? `\`${escape(item.file)}${item.line ? `:${item.line}` : ""}\` · ` : "";
+  const lines = [`${n}. ${where}${escape(item.problem ?? "")}`];
+  if (item.suggestion) lines.push(`   _Sugerencia:_ ${escape(item.suggestion)}`);
+  if (item.guideline) lines.push(`   _Lineamiento:_ ${escape(item.guideline)}`);
+  return lines.join("\n");
+}
+
+/** The verdict in the thread. `review` is what the Revisor wrote in `.reviewer/review.json`. */
+export function reviewText(context, review) {
+  const pr = context.pr;
+  const head = `${prLink(pr)} · ${escape(context.app)}${pr.headBranch ? ` · \`${escape(pr.headBranch)}\`` : ""}`;
+  const who = userMention(context.requested_by);
+  if (review.verdict === "error") {
+    return `:x: *No pude revisar el* ${prLink(pr)}: ${escape(review.summary ?? "sin detalle")}`;
+  }
+  const approved = review.verdict === "approve";
+  const lines = [`${approved ? ":white_check_mark: *Visto bueno*" : ":warning: *Cambios necesarios*"} · ${head}`];
+  if (review.summary) lines.push(`${who}${escape(review.summary)}`);
+  if (review.fixesFailure) lines.push(`*¿Corrige la falla del hilo?* ${escape(review.fixesFailure)}`);
+  const items = review.items ?? [];
+  if (!approved && items.length) {
+    lines.push(...items.slice(0, MAX_REVIEW_ITEMS).map((item, i) => reviewItem(item, i + 1)));
+    if (items.length > MAX_REVIEW_ITEMS) lines.push(`_y ${items.length - MAX_REVIEW_ITEMS} más en el PR._`);
+  }
+  if (review.githubPosted) lines.push(approved ? "_Aprobado también en GitHub._" : "_Los mismos comentarios están en el PR de GitHub._");
+  return truncate(lines.join("\n"), MESSAGE_LIMIT);
+}
