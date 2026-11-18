@@ -19,7 +19,7 @@ export function reviewPayload({ pr, app, channel, thread, via, base }) {
 }
 
 /**
- * Acknowledges in the thread and starts the Revisor Crashlytics automation. The acknowledgment is
+ * Acknowledges in the thread and starts the Revisor de PRs automation. The acknowledgment is
  * also what tells `review:scan` that a mention was already picked up.
  */
 export async function requestReview({ config, pr, thread, channel, via, base, poster, dryRun }) {

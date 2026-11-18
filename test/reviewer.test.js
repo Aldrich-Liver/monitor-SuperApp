@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { reviewAckText, reviewText } from "../src/format.js";
-import { applicableGuidelines, globToRegExp, ruleMeta } from "../src/reviewer/guidelines.js";
+import { applicableGuidelines, globToRegExp, guidelineKind, ruleMeta } from "../src/reviewer/guidelines.js";
 import { appForRepo, mentionsPr, parsePr, prUrls, twinRepo } from "../src/reviewer/pr.js";
 import { reviewPayload } from "../src/reviewer/requests.js";
 import { answered, findPrThread, pendingMentions, threadContext } from "../src/reviewer/thread.js";
@@ -36,14 +36,29 @@ test("maps a repo to its app and its twin platform", () => {
   assert.equal(twinRepo(config, "sw-crp-super-app-ios"), "sw-crp-super-app-android");
 });
 
-test("reads Cursor rule frontmatter", () => {
+test("reads rule and skill frontmatter", () => {
   assert.deepEqual(ruleMeta("---\ndescription: Evidencia\nglobs: app/**/*.kt, *.gradle\nalwaysApply: false\n---\nCuerpo"), {
     alwaysApply: false,
     globs: ["app/**/*.kt", "*.gradle"],
     description: "Evidencia",
+    name: null,
   });
   assert.deepEqual(ruleMeta('---\nglobs:\n  - "src/**"\nalwaysApply: true\n---').globs, ["src/**"]);
+  assert.equal(ruleMeta("---\nname: investigar-crash\ndescription: Corrige crashes\n---").name, "investigar-crash");
   assert.equal(ruleMeta("sin frontmatter").alwaysApply, false);
+});
+
+test("classifies the team's written guidance", () => {
+  assert.equal(guidelineKind(".claude/skills/investigar-crash/SKILL.md"), "skill");
+  assert.equal(guidelineKind("skills/x/SKILL.md"), "skill");
+  assert.equal(guidelineKind(".cursor/rules/a.mdc"), "rule");
+  assert.equal(guidelineKind("AGENTS.md"), "agents");
+  assert.equal(guidelineKind(".github/pull_request_template.md"), "agents");
+  assert.equal(guidelineKind("app/README.md"), "readme");
+  assert.equal(guidelineKind("app/vas/PENDIENTES_VAS.md"), "doc");
+  assert.equal(guidelineKind("_retirado/README.md"), null);
+  assert.equal(guidelineKind(".claude/skills/x/referencia.md"), null);
+  assert.equal(guidelineKind("app/Main.kt"), null);
 });
 
 test("matches globs the way rules use them", () => {
@@ -53,27 +68,42 @@ test("matches globs the way rules use them", () => {
   assert.ok(!globToRegExp("app/*.kt").test("app/src/A.kt"));
 });
 
-test("selects the guidelines that bear on the changed files", () => {
+test("selects the guidance that bears on the changed files", () => {
+  const meta = (extra) => ({ alwaysApply: false, globs: [], description: null, name: null, ...extra });
   const guidelines = [
-    { path: "AGENTS.md" },
-    { path: "app/core/designsystem/AGENTS.md" },
+    { path: ".claude/skills/investigar-crash/SKILL.md", ref: "main", meta: meta({ name: "investigar-crash", description: "Corrige crashes" }) },
+    { path: "AGENTS.md", ref: "main" },
+    { path: "README.md", ref: "main" },
+    { path: "PENDIENTE_XCODE.md" },
+    { path: "app/core/designsystem/AGENTS.md", ref: "pr" },
+    { path: "app/vas/PENDIENTES_VAS.md" },
+    { path: "app/vas/README.md" },
     { path: "feature/AGENTS.md" },
-    { path: ".cursor/rules/siempre.mdc", meta: { alwaysApply: true, globs: [], description: null } },
-    { path: ".cursor/rules/kotlin.mdc", meta: { alwaysApply: false, globs: ["**/*.kt"], description: null } },
-    { path: ".cursor/rules/swift.mdc", meta: { alwaysApply: false, globs: ["**/*.swift"], description: null } },
-    { path: ".cursor/rules/evidencia.mdc", meta: { alwaysApply: false, globs: [], description: "Registro de evidencia" } },
+    { path: ".cursor/rules/siempre.mdc", meta: meta({ alwaysApply: true }) },
+    { path: ".cursor/rules/kotlin.mdc", meta: meta({ globs: ["**/*.kt"] }) },
+    { path: ".cursor/rules/swift.mdc", meta: meta({ globs: ["**/*.swift"] }) },
+    { path: ".cursor/rules/evidencia.mdc", meta: meta({ description: "Registro de evidencia" }) },
   ];
-  const result = applicableGuidelines(guidelines, ["app/core/designsystem/Boton.kt", "README.md"]);
+  const changed = ["app/core/designsystem/Boton.kt", ...Array.from({ length: 12 }, (_, i) => `app/vas/V${i}.kt`)];
+  const result = applicableGuidelines(guidelines, changed);
   assert.deepEqual(
-    result.map((g) => [g.path, g.appliesTo]),
+    result.map((g) => [g.path, g.kind, Array.isArray(g.appliesTo) ? g.matchedFiles ?? g.appliesTo.length : g.appliesTo]),
     [
-      ["AGENTS.md", "todo el repo"],
-      ["app/core/designsystem/AGENTS.md", ["app/core/designsystem/Boton.kt"]],
-      [".cursor/rules/siempre.mdc", "todo el repo"],
-      [".cursor/rules/kotlin.mdc", ["app/core/designsystem/Boton.kt"]],
-      [".cursor/rules/evidencia.mdc", "si aplica"],
+      ["AGENTS.md", "agents", "todo el repo"],
+      ["app/core/designsystem/AGENTS.md", "agents", 1],
+      ["README.md", "readme", "todo el repo"],
+      ["app/vas/README.md", "readme", 12],
+      [".cursor/rules/siempre.mdc", "rule", "todo el repo"],
+      [".cursor/rules/kotlin.mdc", "rule", 13],
+      [".cursor/rules/evidencia.mdc", "rule", "si aplica"],
+      ["PENDIENTE_XCODE.md", "doc", "si aplica"],
+      ["app/vas/PENDIENTES_VAS.md", "doc", 12],
+      [".claude/skills/investigar-crash/SKILL.md", "skill", "si aplica"],
     ]
   );
+  assert.equal(result.find((g) => g.kind === "skill").name, "investigar-crash");
+  assert.equal(result.find((g) => g.path === "app/core/designsystem/AGENTS.md").ref, "pr");
+  assert.equal(result.find((g) => g.path === "app/vas/README.md").appliesTo.length, 10);
 });
 
 const msg = (ts, extra = {}) => ({ ts: String(ts), text: "", ...extra });
@@ -117,6 +147,16 @@ test("finds the thread where the PR link was posted most recently", async () => 
   assert.equal(await findPrThread(slack, parsePr("https://github.com/a/b/pull/1"), { now: NOW }), null);
 });
 
+test("a request in the main channel is answered in a thread under it", async () => {
+  const ask = msg(recent(3), { user: "UDEV", text: `<@UREV> revisa la función nueva <${PR_URL}>` });
+  const slack = fakeSlack({ top: [ask], threads: {} });
+  const found = await findPrThread(slack, pr, { now: NOW });
+  assert.equal(found.thread_ts, ask.ts);
+  assert.equal(found.request, ask);
+  const pending = await pendingMentions(slack, reviewer, { now: NOW });
+  assert.deepEqual(pending.map((p) => p.thread_ts), [ask.ts]);
+});
+
 test("picks up mentions of the reviewer bot that it has not answered", async () => {
   const a = msg(recent(120), { reply_count: 2, latest_reply: recent(30) });
   const b = msg(recent(110), { reply_count: 2, latest_reply: recent(20) });
@@ -150,11 +190,14 @@ test("the payload names who asked, but not when a bot asked", () => {
 });
 
 test("formats the verdict for the thread", () => {
-  const context = { pr: { ...pr, headBranch: "fix/remote-config" }, app: "Super App iOS", requested_by: "UDEV" };
-  const ok = reviewText(context, { verdict: "approve", summary: "Sube el tiempo de espera <15s>.", fixesFailure: "Sí.", items: [], githubPosted: true });
-  assert.match(ok, /^:white_check_mark: \*Visto bueno\* · <https:\/\/github\.com\/Aldrich-Liver\/sw-crp-super-app-ios\/pull\/7\|PR #7>/);
+  const context = { pr: { ...pr, title: "Agenda de citas", headBranch: "feat/agenda" }, app: "Super App iOS", requested_by: "UDEV" };
+  const ok = reviewText(context, { verdict: "approve", summary: "Sube el tiempo de espera <15s>.", fixesFailure: "Sí.", meetsGoal: "Sí.", items: [], githubPosted: true });
+  assert.match(ok, /^:white_check_mark: \*Visto bueno\* · <https:\/\/github\.com\/Aldrich-Liver\/sw-crp-super-app-ios\/pull\/7\|PR #7> · Super App iOS · _Agenda de citas_ · `feat\/agenda`\n/);
   assert.match(ok, /<@UDEV> Sube el tiempo de espera &lt;15s&gt;\./);
-  assert.match(ok, /Aprobado también en GitHub/);
+  assert.match(ok, /¿Corrige la falla del hilo\?\* Sí\./);
+  assert.doesNotMatch(ok, /Cumple su objetivo/);
+  assert.match(ok, /La revisión también quedó en el PR de GitHub/);
+  assert.match(reviewText(context, { verdict: "approve", meetsGoal: "Sí, agrega la agenda." }), /¿Cumple su objetivo\?\* Sí, agrega la agenda\./);
 
   const items = Array.from({ length: 8 }, (_, i) => ({ file: "A.swift", line: i + 1, problem: `p${i}`, suggestion: "s", guideline: "AGENTS.md §2.1" }));
   const changes = reviewText(context, { verdict: "changes", summary: "Falta el gemelo.", items });

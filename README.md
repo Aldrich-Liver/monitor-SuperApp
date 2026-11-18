@@ -6,7 +6,7 @@ Funciona con tres automatizaciones de Cursor en el environment **Super App**:
 
 1. **Monitor Crashlytics**, programada cada hora. Ejecuta `npm run check` y `npm run render`, y publica el reporte (un mensaje corto con la lista de fallas) como Cursor, con la herramienta Send to Slack. Luego `npm run notify` encuentra ese reporte en el canal por su `Ref. CR-…`, menciona al Analista en el hilo con el bot del monitor y activa al Analista por webhook con los datos de las fallas.
 2. **Analista Crashlytics**, activada por webhook. Ejecuta `npm run details`, lee el código del commit con el que se compiló la versión y escribe la causa y la solución propuesta en palabras simples. Con `npm run reply` responde en el hilo una vez por falla.
-3. **Revisor Crashlytics**, activada por webhook. Revisa el PR que corrige una falla contra los lineamientos del repo de la app (`AGENTS.md` y `.cursor/rules`), da el visto bueno o pide solo los cambios necesarios, comenta en el PR de GitHub y responde en el hilo.
+3. **Revisor de PRs**, activada por webhook. Revisa cualquier PR de las apps (corrección de una falla, función nueva, mejora, versión…) con los lineamientos, skills y documentos del equipo que viven en el repo, da el visto bueno o pide solo los cambios necesarios, comenta en el PR de GitHub y responde en el hilo.
 
 ```
 :rotating_light: 1 falla en Crashlytics · 5 eventos nuevos entre 11:04 a.m. y 12:04 p.m. (hora CDMX)
@@ -32,29 +32,47 @@ Funciona con tres automatizaciones de Cursor en el environment **Super App**:
 - **Errores del monitor**, por ejemplo credenciales vencidas: los reporta en el canal, pero el mismo error no se repite antes de 6 horas.
 - El Analista revisa como máximo las 8 fallas con más eventos (`maxAnalyzedFailures`). Guarda cada análisis por issue y versión, y si la misma falla vuelve a aparecer lo reutiliza en vez de volver a leer el código.
 
-## Revisión de PR
+## Revisor de PRs
 
-Quien corrige una falla pega el enlace del PR en el hilo de esa falla y pide la revisión de una de estas formas:
+Sirve para cualquier PR de `sw-crp-super-app-android` o `sw-crp-super-app-ios`: la corrección de una falla del monitor, una función nueva, una mejora, documentación o una versión. Se pide pegando el enlace del PR en un mensaje de `#team-mobile`, en el canal principal o en un hilo, de una de estas formas:
 
-- **Arrobando a Cursor:** `@Cursor revisa este PR https://github.com/…/pull/12`. Cursor lee [`AGENTS.md`](AGENTS.md), ejecuta `npm run review:request -- <URL>` y el comando encuentra el hilo por el enlace. La revisión empieza en segundos.
-- **Arrobando al bot:** `@Revisor Crashlytics https://github.com/…/pull/12`. El bot no recibe eventos de Slack, así que el monitor, en su corrida de cada hora, encuentra la mención con `npm run review:scan` y activa la revisión.
+- **Arrobando a Cursor:** `@Cursor revisa este PR https://github.com/…/pull/12`. Cursor lee [`AGENTS.md`](AGENTS.md), ejecuta `npm run review:request -- <URL>` y el comando encuentra el mensaje por el enlace. La revisión empieza en segundos.
+- **Arrobando al bot:** `@Revisor de PRs https://github.com/…/pull/12`. El bot no recibe eventos de Slack, así que el monitor, en su corrida de cada hora, encuentra la mención con `npm run review:scan` y activa la revisión.
 - **Desde otra automatización:** `npm run review:request -- <URL> --thread <ts del hilo>`, o un POST al webhook del Revisor con el payload que imprime `npm run review:request -- <URL> --dry-run`.
 
-En el hilo, el Revisor avisa que empezó (`:eyes:`) y después publica el veredicto:
+Responde siempre en un hilo: el del mensaje que lo pidió, o uno nuevo debajo de él si se pidió en el canal principal. Primero avisa que empezó (`:eyes:`) y después publica el veredicto:
 
 ```
-:warning: Cambios necesarios · PR #12 · Super App Android · fix/remote-config-timeout
-@quien-pidió Sube la espera de Remote Config, pero atrapa el error sin reintentar.
-¿Corrige la falla del hilo? Parcialmente: la app ya no se traba, pero la configuración sigue sin cargar.
-1. ArranqueAnfitrion.kt:55 · Se ignora el timeout sin registrar el evento…
+:warning: Cambios necesarios · PR #12 · Super App Android · Agenda de citas en Clienteling · feat/agenda-citas
+@quien-pidió Agrega la agenda de citas, pero el ViewModel llama directo al repositorio remoto.
+¿Cumple su objetivo? Parcialmente: la agenda funciona, pero falta el PR gemelo de iOS.
+1. ClientelingViewModel.kt:88 · La presentación usa Datos/ directamente…
    Sugerencia: …
-   Lineamiento: AGENTS.md §5.3
-Los mismos comentarios están en el PR de GitHub.
+   Lineamiento: AGENTS.md §3.4
+La revisión también quedó en el PR de GitHub.
 ```
 
-Solo cuenta como cambio necesario un error que provoque un crash, una regresión, datos incorrectos o un problema de seguridad; algo que rompa un lineamiento que aplica; que no corrija la falla del hilo; o que falte el PR gemelo en la otra plataforma. Los gustos de estilo no cuentan. El Revisor no ejecuta código del PR ni cambia nada en los repos.
+### En qué se apoya
 
-El Revisor descarga el PR con git (`refs/pull/N/head`), así que solo revisa PRs de repos que puede clonar el environment Super App. Para la rama base usa la rama por defecto del repo (`main`), salvo que la solicitud traiga otra.
+`npm run review:context` arma la lista de lo que el equipo escribió y aplica al PR. Lo toma de la rama base (`main`), y de la rama del PR cuando el PR lo agrega o lo cambia:
+
+- **Lineamientos para agentes:** `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md` y la plantilla de PR, de la raíz y de cada carpeta que toca el PR.
+- **READMEs** de la raíz y de esas carpetas, y **otros documentos** de esas carpetas (por ejemplo `PENDIENTES_VAS.md` si el PR toca VAS).
+- **Reglas de Cursor** (`.cursor/rules`) que siempre aplican o cuyos `globs` coinciden con los archivos del PR.
+- **Skills** (`.claude/skills`, `.cursor/skills`, `skills/`), como `investigar-crash`, `publicar-version` y `prueba-qa`. El Revisor lee las que corresponden al tipo de PR y revisa que el PR siga lo que piden.
+
+También lee el título, la descripción y las ramas del PR en la API de GitHub, con el token que el environment ya le da a git o con `GITHUB_TOKEN`, y los mensajes del hilo, por ejemplo la causa y la solución que propuso el Analista.
+
+Solo cuenta como cambio necesario:
+
+- un error que provoque un crash, una regresión, datos incorrectos o un problema de seguridad;
+- algo que rompa un lineamiento, una regla o una skill;
+- que el PR no cumpla su objetivo, sea la falla del hilo o lo que dice su descripción;
+- que falte algo que los lineamientos exigen para ese tipo de cambio, como pruebas, diseño aprobado, la métrica de una función nueva o el PR gemelo en la otra plataforma.
+
+Los gustos de estilo no cuentan. El Revisor no ejecuta código del PR ni cambia nada en los repos.
+
+El Revisor descarga el PR con git (`refs/pull/N/head`), así que solo revisa PRs de repos que puede clonar el environment Super App.
 
 ## Requisitos
 
@@ -72,8 +90,9 @@ Node.js 20 o superior. No hay dependencias que instalar.
 | `ANALYST_WEBHOOK_URL`, `ANALYST_WEBHOOK_KEY` | URL y llave del webhook de la automatización Analista Crashlytics. |
 | `SLACK_ANALYST_BOT_TOKEN` | Opcional: token del bot del Analista. Con él, el hilo arroba al Analista y sus respuestas salen con su propio nombre. Sin él, el hilo lo nombra en negritas y responde el bot del monitor. |
 | `SLACK_ANALYST_MENTION` | Opcional: fija la mención (`<@U…>`) en vez de obtenerla del token del Analista. |
-| `REVIEWER_WEBHOOK_URL`, `REVIEWER_WEBHOOK_KEY` | URL y llave del webhook de la automatización Revisor Crashlytics. |
+| `REVIEWER_WEBHOOK_URL`, `REVIEWER_WEBHOOK_KEY` | URL y llave del webhook de la automatización Revisor de PRs. |
 | `SLACK_REVIEWER_BOT_TOKEN` | Token del bot del Revisor. Con él, el Revisor responde con su propio nombre y `review:scan` encuentra sus menciones. Sin él, responde el bot del Analista o el del monitor. |
+| `GITHUB_TOKEN` | Opcional: token de solo lectura para la API de GitHub. Sin él, el Revisor usa el token que el environment le da a git. |
 
 ## Uso local
 
@@ -137,9 +156,9 @@ En [cursor.com/automations](https://cursor.com/automations):
 - **Prompt:** [`automation/monitor-prompt.md`](automation/monitor-prompt.md).
 - **Modelo:** uno rápido y económico; solo ejecuta comandos.
 
-### 4. Revisor Crashlytics
+### 4. Revisor de PRs
 
-1. Crea la app de Slack con los pasos del bot, usando [`slack/reviewer-manifest.json`](slack/reviewer-manifest.json). Guarda su token en `SLACK_REVIEWER_BOT_TOKEN` e invítala con `/invite @Revisor Crashlytics`.
+1. Crea la app de Slack con los pasos del bot, usando [`slack/reviewer-manifest.json`](slack/reviewer-manifest.json). Guarda su token en `SLACK_REVIEWER_BOT_TOKEN` e invítala con `/invite @Revisor de PRs`.
 2. Crea la automatización:
    - **Disparador:** Webhook. Copia la URL y la llave a `REVIEWER_WEBHOOK_URL` y `REVIEWER_WEBHOOK_KEY`.
    - **Environment:** Super App.

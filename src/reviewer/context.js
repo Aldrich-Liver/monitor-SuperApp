@@ -3,8 +3,9 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { readJson, writeJson } from "../files.js";
-import { applicableGuidelines, isGuideline, ruleMeta } from "./guidelines.js";
-import { appForRepo, twinRepo } from "./pr.js";
+import { fetchPr } from "./github.js";
+import { applicableGuidelines, guidelineKind, needsMeta, ruleMeta } from "./guidelines.js";
+import { appForRepo, prUrls, twinRepo } from "./pr.js";
 
 const { values: args } = parseArgs({
   options: {
@@ -82,7 +83,10 @@ try {
 }
 
 const head = git(dir, ["rev-parse", prRef]);
+const github = await fetchPr(payload.pr);
+if (!github) console.warn("Sin acceso a la API de GitHub: la revisión no tendrá el título ni la descripción del PR.");
 let baseBranch = payload.pr.base;
+if (!baseBranch && github?.base && gitOk(dir, ["rev-parse", "--verify", `${ns}/${github.base}`])) baseBranch = github.base;
 if (!baseBranch) {
   try {
     baseBranch = git(dir, ["symbolic-ref", "--short", `refs/remotes/${ns}/HEAD`]).replace(/^[^/]+\//, "");
@@ -109,10 +113,12 @@ if (gitOk(dir, ["merge-base", "--is-ancestor", head, baseRef])) {
 }
 
 const headBranch =
+  github?.headBranch ??
   git(dir, ["for-each-ref", "--points-at", head, "--format=%(refname:short)", `refs/remotes/${ns}`])
     .split("\n")
     .map((r) => r.slice(ns.length + 1))
-    .find((r) => r && r !== "HEAD" && !r.startsWith("pr/")) ?? null;
+    .find((r) => r && r !== "HEAD" && !r.startsWith("pr/")) ??
+  null;
 
 const commits = git(dir, ["log", "--format=%h %s (%an)", "--max-count=50", `${baseCommit}..${head}`]).split("\n").filter(Boolean);
 const numstat = new Map(
@@ -137,17 +143,31 @@ const patch = git(dir, ["diff", "-M", baseCommit, head]);
 mkdirSync(dirname(args.diff), { recursive: true });
 writeFileSync(args.diff, patch + "\n");
 
-const guidelineFiles = git(dir, ["ls-tree", "-r", "--name-only", head])
-  .split("\n")
-  .filter(isGuideline)
-  .map((path) => ({ path, meta: path.endsWith(".md") ? null : ruleMeta(git(dir, ["show", `${head}:${path}`])) }));
+// The team's current guidance lives on the base branch; guidance the PR adds or changes is read from the PR.
+const listGuides = (ref) => git(dir, ["ls-tree", "-r", "--name-only", ref]).split("\n").filter((path) => guidelineKind(path));
+const changed = new Set(files.map((f) => f.path));
+const guideRefs = new Map(listGuides(baseRef).map((path) => [path, baseRef]));
+for (const path of listGuides(head)) if (!guideRefs.has(path) || changed.has(path)) guideRefs.set(path, head);
+const guidelineFiles = [...guideRefs].map(([path, ref]) => ({
+  path,
+  ref: ref === head ? "pr" : baseBranch,
+  meta: needsMeta(path) ? ruleMeta(git(dir, ["show", `${ref}:${path}`])) : null,
+}));
 const guidelines = applicableGuidelines(guidelineFiles, files.map((f) => f.path));
 
 let twin = null;
 const twinName = twinRepo(config, repo);
 if (twinName) {
-  twin = { repo: twinName, branch: headBranch, branchExists: null };
-  if (headBranch) {
+  const linked = prUrls(github?.body).find((p) => p.repo.toLowerCase() === twinName.toLowerCase());
+  twin = {
+    repo: twinName,
+    linkedPr: linked?.url ?? null,
+    namedInDescription: github ? (github.body ?? "").toLowerCase().includes(twinName.toLowerCase()) : null,
+    branch: headBranch,
+    branchExists: null,
+  };
+  // After a merge the twin branch may already be deleted, so its absence says nothing.
+  if (headBranch && !merged && github?.state !== "closed") {
     const twinDir = repoDir(twinName, { clone: false });
     try {
       const refs = twinDir
@@ -161,7 +181,19 @@ if (twinName) {
 }
 
 const context = {
-  pr: { ...payload.pr, base: baseBranch, head, baseCommit, headBranch, merged },
+  pr: {
+    ...payload.pr,
+    title: github?.title ?? null,
+    description: github?.body ?? null,
+    author: github?.author ?? null,
+    state: github?.state ?? (merged ? "merged" : null),
+    draft: github?.draft ?? null,
+    base: baseBranch,
+    head,
+    baseCommit,
+    headBranch,
+    merged,
+  },
   app: payload.app,
   repoDir: dir,
   channel: payload.channel,
@@ -186,5 +218,8 @@ writeJson(args.out, context);
 console.log(`PR #${number} de ${repo}: ${headBranch ?? head.slice(0, 7)} → ${baseBranch}${merged ? " (ya fusionado)" : ""}.`);
 console.log(`${files.length} archivo(s), +${context.totals.added} −${context.totals.removed}, ${commits.length} commit(s). Diff: ${args.diff}`);
 console.log(`Lineamientos que aplican: ${guidelines.map((g) => g.path).join(", ") || "ninguno"}.`);
-if (twin) console.log(`Rama gemela en ${twin.repo}: ${twin.branchExists === null ? "no se pudo comprobar" : twin.branchExists ? "sí" : "no"}.`);
+if (twin) {
+  const branch = twin.branchExists === null ? "no se pudo comprobar" : twin.branchExists ? "sí" : "no";
+  console.log(`Gemelo en ${twin.repo}: PR enlazado ${twin.linkedPr ?? "no"}; rama ${branch}.`);
+}
 console.log(`Contexto: ${args.out}`);
