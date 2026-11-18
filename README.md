@@ -1,25 +1,35 @@
 # Monitor de Crashlytics
 
-Vigila la última versión de Super App y Contacto Logístico (Android e iOS) en el proyecto de Firebase `crp-dev-dig-superapp` y avisa en Slack (`#team-mobile`) de cada issue nuevo o que regrese, sea fatal, no fatal o ANR, sin importar cuántos usuarios afecte. También avisa cuando sale una versión nueva.
+Revisa cada hora la última versión de Super App y Contacto Logístico (Android e iOS) en el proyecto de Firebase `crp-dev-dig-superapp`. Si hay fallas con eventos nuevos, ya sean crashes, no fatales o ANR, nuevas o conocidas, las reporta en Slack (`#team-mobile`). Si no hay fallas, no publica nada.
 
-Está pensado para correr como una automatización programada de Cursor en el environment **Super App**, que también tiene los repos `sw-crp-super-app-android` y `sw-crp-super-app-ios`. En cada ejecución, un agente:
+Funciona con dos automatizaciones de Cursor en el environment **Super App**:
 
-1. Ejecuta `npm run check` para consultar Crashlytics.
-2. Si hay algo nuevo, revisa el código del commit con el que se compiló esa versión y escribe un análisis.
-3. Ejecuta `npm run render` y publica los mensajes con la herramienta Send to Slack.
+1. **Monitor Crashlytics**, programada cada hora. Ejecuta `npm run check` y `npm run notify`. Publica un mensaje corto con la lista de fallas y, en su hilo, menciona al Analista. Después activa al Analista por webhook con los datos de las fallas.
+2. **Analista Crashlytics**, activada por webhook. Ejecuta `npm run details`, lee el código del commit con el que se compiló la versión y escribe la causa y la solución propuesta en palabras simples. Con `npm run reply` responde en el hilo una vez por falla.
 
-Lo que ya se reportó se guarda en la memoria de la automatización, así que cada issue se avisa una sola vez.
+```
+:rotating_light: 1 falla en Crashlytics · 5 eventos nuevos entre 11:04 a.m. y 12:04 p.m. (hora CDMX)
+• Super App Android 1.5.5 (290) · No fatal · ArranqueAnfitrion$PasoArranqueExcedido.<init> · 5 eventos · desde 1.5.2
+:thread: Detalle y solución propuesta en el hilo.
+   └ :mag: @Analista Crashlytics, revisa 1 falla contra el código del release y responde en este hilo…
+   └ 1/1 · Super App Android 1.5.5 (290) · No fatal
+     Error: ArranqueAnfitrion$PasoArranqueExcedido.<init>
+     > rt - El paso de arranque 'remote_config' no terminó en 15s
+     Dónde: ArranqueAnfitrion.protegido-dWUq8MI (ArranqueAnfitrion.kt:55)
+     Eventos: 5 nuevos · 17 en esta versión · 16 usuarios · desde 1.5.2
+     Qué está pasando: Al abrir la app, la configuración remota tarda más de 15 s…
+     Solución propuesta: …
+     Ver en Crashlytics
+```
 
-## Cómo decide qué avisar
+## Cómo decide qué reportar
 
-- **Última versión:** la de versión semántica más alta con datos en los últimos 30 días (`releaseLookbackDays`). Para vigilar también la anterior, sube `watchLatestVersions` a 2 en `config/apps.json`.
-- **Issue nuevo:** aparece en la última versión y no se había visto antes en esa app.
-- **Regresión:** Crashlytics marca un issue conocido con la señal `SIGNAL_REGRESSED`. Se avisa una vez por regresión.
-- **Versión nueva:** cambia la última versión detectada.
-- **Primera ejecución:** registra los issues existentes como conocidos, sin avisar de cada uno, y manda un solo mensaje de "monitor activo".
-- **Errores:** si no puede consultar Crashlytics, avisa del error, y de ese mismo error no vuelve a avisar en menos de 2 horas.
-
-Las apps, el repo de código de cada una (`sourceRepo`) y los umbrales se configuran en `config/apps.json`.
+- **Última versión:** la versión semántica más alta con datos en los últimos 30 días (`releaseLookbackDays`).
+- **Falla:** cualquier issue de la última versión cuyo número de eventos subió desde la revisión anterior. Los eventos se cuentan desde un instante fijo por versión, así que los que Crashlytics procesa con retraso se reportan en la siguiente hora.
+- **Versión nueva:** se reportan todos sus issues con eventos.
+- **Primera revisión**, o cuando se reinicia el conteo tras 85 días en la misma versión: solo registra los contadores y no publica.
+- **Errores del monitor**, por ejemplo credenciales vencidas: los reporta en el canal, pero el mismo error no se repite antes de 6 horas.
+- El Analista revisa como máximo las 8 fallas con más eventos (`maxAnalyzedFailures`). Guarda cada análisis por issue y versión, y si la misma falla vuelve a aparecer lo reutiliza en vez de volver a leer el código.
 
 ## Requisitos
 
@@ -29,50 +39,68 @@ Node.js 20 o superior. No hay dependencias que instalar.
 
 | Variable | Para qué |
 |---|---|
-| `FIREBASE_TOKEN` | Token de `npx firebase-tools login:ci`. Actúa con los permisos de la persona que lo generó; es la opción temporal mientras no haya cuenta de servicio. |
-| `CRASHLYTICS_SA_KEY` | JSON de la cuenta de servicio de Google, completo o en base64. Es la opción recomendada a largo plazo; si está definida junto con `FIREBASE_TOKEN`, se usa `FIREBASE_TOKEN`. |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Alternativa: ruta al archivo JSON de la cuenta de servicio. |
+| `FIREBASE_TOKEN` | Token de `npx firebase-tools login:ci`, con los permisos de quien lo generó. |
+| `CRASHLYTICS_SA_KEY` / `GOOGLE_APPLICATION_CREDENTIALS` | Alternativa: una cuenta de servicio con el rol Firebase Crashlytics Viewer. |
 | `GOOGLE_OAUTH_ACCESS_TOKEN` | Alternativa para pruebas locales: un token de acceso OAuth vigente. |
-| `SLACK_BOT_TOKEN`, `SLACK_TARGET` | Opcional, para que `npm run notify` publique directamente con un bot propio, en un canal (`C…`) o por mensaje directo (`U…`). |
-| `SLACK_WEBHOOK_URL` | Opcional, alternativa al bot: un incoming webhook de Slack. |
+| `SLACK_BOT_TOKEN` | Token `xoxb-…` del bot de Slack que publica. Necesita el permiso `chat:write` y estar invitado al canal. |
+| `SLACK_CHANNEL` | ID del canal (`C…`) de `#team-mobile`. |
+| `ANALYST_WEBHOOK_URL`, `ANALYST_WEBHOOK_KEY` | URL y llave del webhook de la automatización Analista Crashlytics. |
+| `SLACK_ANALYST_MENTION` | Opcional: la mención `<@U…>` del bot del Analista, para que el hilo lo arrobe de verdad. |
+| `SLACK_ANALYST_BOT_TOKEN` | Opcional: token del bot del Analista, para que sus respuestas salgan con su propio nombre. Sin este token, responde el bot del monitor. |
 
 ## Uso local
 
 ```bash
-export GOOGLE_APPLICATION_CREDENTIALS=./crashlytics-monitor.sa.json
-npm run check                 # consulta Crashlytics; escribe .monitor/result.json y .monitor/state.next.json
-npm run render                # escribe los mensajes como texto en .monitor/messages.json
-npm run notify -- --dry-run   # muestra los mensajes en formato Block Kit sin enviarlos
-cp .monitor/state.next.json .monitor/state.json  # lo que hace la automatización con su memoria
+export FIREBASE_TOKEN=...                    # o GOOGLE_OAUTH_ACCESS_TOKEN
+npm run check                                # escribe .monitor/result.json y .monitor/state.next.json
+cp .monitor/state.next.json .monitor/state.json   # lo que hace la automatización con su memoria
+npm run check                                # una hora después: reporta lo que subió
+npm run notify -- --dry-run                  # muestra mensajes y payload sin enviarlos
+
+# Analista: el payload que imprimió notify va en .analyst/payload.json
+npm run details                              # escribe .analyst/details.json
+# escribe .analyst/analysis.json: { "<key>": { "cause": "...", "fix": "..." } }
+npm run reply -- --dry-run
 npm test
 ```
 
-## Credenciales sin cuenta de servicio (temporal)
+## Configuración
 
-1. En tu computadora, con Node.js instalado, ejecuta `npx firebase-tools login:ci`.
-2. Se abre el navegador. Entra con tu cuenta de Google y autoriza la CLI de Firebase.
-3. La terminal imprime un token que empieza con `1//`. Cópialo directo al secreto `FIREBASE_TOKEN` (Runtime Secret) en Cloud Agents > Secrets. No lo pegues en chats ni en archivos.
+### 1. Bot de Slack
 
-El token tiene los mismos permisos que tu usuario en todos tus proyectos de Google Cloud y Firebase. Para revocarlo, ve a [myaccount.google.com/permissions](https://myaccount.google.com/permissions) y quita el acceso de "Firebase CLI". Si las políticas de la organización lo invalidan, el monitor avisa del error en Slack.
+La herramienta Send to Slack de las automatizaciones no devuelve el identificador del mensaje y por eso no puede responder en hilos. El monitor publica con un bot propio.
 
-## Configuración en Google Cloud (una vez)
+1. En [api.slack.com/apps](https://api.slack.com/apps), elige **Create New App > From scratch**, ponle de nombre `Monitor Crashlytics` y selecciona el workspace.
+2. En **OAuth & Permissions > Bot Token Scopes**, agrega `chat:write`.
+3. Haz clic en **Install to Workspace** y copia el **Bot User OAuth Token** (`xoxb-…`) al secreto `SLACK_BOT_TOKEN`.
+4. En `#team-mobile`, escribe `/invite @Monitor Crashlytics`.
+5. Para el ID del canal, abre los detalles de `#team-mobile`; el ID (`C…`) está al final. Guárdalo en el secreto `SLACK_CHANNEL`.
 
-1. En la consola de Google Cloud, con el proyecto `crp-dev-dig-superapp` seleccionado, ve a **IAM y administración > Cuentas de servicio** y crea una llamada `crashlytics-monitor`.
-2. Asígnale el rol **Firebase Crashlytics Viewer** (`roles/firebasecrashlytics.viewer`). Es de solo lectura.
-3. En la cuenta de servicio, entra a **Claves > Agregar clave > JSON** y descarga el archivo. Si la organización bloquea la creación de claves, un administrador tiene que dar una excepción para este proyecto.
-4. Si la primera ejecución falla con `SERVICE_DISABLED`, habilita la **Firebase Crashlytics API** (`firebasecrashlytics.googleapis.com`) en el proyecto.
+Opcional: para que el Analista aparezca como un usuario aparte y se pueda arrobar, crea una segunda app, `Analista Crashlytics`, con los mismos pasos. Guarda su token en `SLACK_ANALYST_BOT_TOKEN` y su mención en `SLACK_ANALYST_MENTION`, con el formato `<@U…>` y el Member ID que aparece en su perfil. Sin estos secretos, el hilo nombra al Analista en negritas y el bot del monitor publica sus respuestas.
 
-## Automatización en Cursor
+### 2. Automatización Analista Crashlytics
 
-1. Agrega este repositorio al environment **Super App** (Cloud Agents > Environments), junto a los repos de Android e iOS.
-2. En **Cloud Agents > Secrets**, agrega `FIREBASE_TOKEN` o `CRASHLYTICS_SA_KEY` como **Runtime Secret**.
-3. Verifica que la app de Cursor esté instalada en Slack (Integrations) y, si `#team-mobile` es privado, invita al bot de Cursor al canal.
-4. En [cursor.com/automations](https://cursor.com/automations), crea una automatización:
-   - **Disparador:** programado, con el cron `*/10 * * * *` para la prueba. Después conviene algo como `0 * * * *` (cada hora).
-   - **Environment:** Super App.
-   - **Herramientas:** **Memories** y **Send to Slack**, con el canal fijo `#team-mobile`.
-   - **Prompt:** el contenido de [`automation/prompt.md`](automation/prompt.md).
-   - **Modelo:** uno rápido y económico, porque la mayoría de las ejecuciones no encuentran nada.
-5. La primera ejecución manda el mensaje de "monitor activo". Desde ahí solo llegan avisos cuando hay algo nuevo.
+En [cursor.com/automations](https://cursor.com/automations):
 
-Cada ejecución cuenta como uso del agente en la nube, así que la frecuencia de 10 minutos conviene solo para la prueba.
+- **Disparador:** Webhook. Al guardar, copia la URL y la llave a los secretos `ANALYST_WEBHOOK_URL` y `ANALYST_WEBHOOK_KEY`.
+- **Environment:** Super App.
+- **Herramientas:** Memories.
+- **Prompt:** [`automation/analyst-prompt.md`](automation/analyst-prompt.md).
+- **Modelo:** uno capaz de leer código.
+
+### 3. Automatización Monitor Crashlytics
+
+- **Disparador:** programado, con el cron `0 * * * *`.
+- **Environment:** Super App.
+- **Herramientas:** solo Memories. Ya no usa Send to Slack.
+- **Prompt:** [`automation/monitor-prompt.md`](automation/monitor-prompt.md).
+- **Modelo:** uno rápido y económico; solo ejecuta comandos.
+
+Todos los secretos van en **Cloud Agents > Secrets** como Runtime Secret, disponibles para el environment Super App.
+
+### Credenciales de Firebase sin cuenta de servicio
+
+1. En tu computadora, ejecuta `npx firebase-tools login:ci` y autoriza con tu cuenta de Google.
+2. Copia el token (`1//…`) directo al secreto `FIREBASE_TOKEN`. No lo pegues en chats ni en archivos.
+
+Para revocarlo, quita el acceso de "Firebase CLI" en [myaccount.google.com/permissions](https://myaccount.google.com/permissions).

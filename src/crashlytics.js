@@ -11,9 +11,10 @@ function appPath(appId) {
   return `${ORIGIN}/v1alpha/projects/${projectNumberOf(appId)}/apps/${appId}`;
 }
 
-function intervalParams(days) {
+function intervalParams(daysOrSince) {
   const end = new Date();
-  const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+  const start =
+    typeof daysOrSince === "string" ? new Date(daysOrSince) : new Date(end.getTime() - daysOrSince * 24 * 60 * 60 * 1000);
   return { "filter.interval.start_time": start.toISOString(), "filter.interval.end_time": end.toISOString() };
 }
 
@@ -39,14 +40,14 @@ export async function releaseVersions(appId, days) {
   return (body.groups ?? []).map((g) => ({ displayName: g.version.displayName, metrics: g.metrics?.[0] ?? {} }));
 }
 
-export async function topIssues(appId, versionDisplayName, days) {
+export async function topIssues(appId, versionDisplayName, since) {
   const groups = [];
   let pageToken;
   for (let page = 0; page < MAX_PAGES; page++) {
     const body = await get(`${appPath(appId)}/reports/topIssues`, {
       page_size: 100,
       "filter.version.display_names": versionDisplayName,
-      ...intervalParams(days),
+      ...intervalParams(since),
       ...(pageToken ? { page_token: pageToken } : {}),
     });
     groups.push(...(body.groups ?? []));

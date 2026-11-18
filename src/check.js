@@ -1,9 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
 import { parseArgs } from "node:util";
-import { releaseVersions, sampleEvent, topIssues } from "./crashlytics.js";
-import { detectApp, errorFinding, normalizeState } from "./detect.js";
-import { summarizeEvent } from "./event.js";
+import { releaseVersions, topIssues } from "./crashlytics.js";
+import { countingSince, detectApp, errorFinding, normalizeState } from "./detect.js";
+import { readJson, writeJson } from "./files.js";
 
 const { values: args } = parseArgs({
   options: {
@@ -14,70 +12,47 @@ const { values: args } = parseArgs({
   },
 });
 
-function readJson(path, fallback) {
-  if (!existsSync(path)) return fallback;
-  const text = readFileSync(path, "utf8").trim();
-  if (!text) return fallback;
-  try {
-    return JSON.parse(text);
-  } catch {
-    console.warn(`Aviso: ${path} no es JSON válido; se reinicia el estado.`);
-    return fallback;
-  }
-}
-
-function writeJson(path, data, pretty = true) {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(data, null, pretty ? 2 : 0) + "\n");
-}
-
 const config = readJson(args.config);
 const prevState = normalizeState(readJson(args.state, null));
 const now = new Date();
-const nextState = { v: 1, apps: { ...prevState.apps }, lastError: prevState.lastError };
+const nextState = { v: 2, apps: { ...prevState.apps }, lastError: prevState.lastError, lastCheckedAt: now.toISOString() };
 const findings = [];
 const appStatus = [];
 const errors = [];
 
 for (const app of config.apps) {
   try {
-    const versions = await releaseVersions(app.appId, config.releaseLookbackDays);
-    const watched = versions.slice(0, config.watchLatestVersions);
-    const issuesByVersion = {};
-    for (const v of watched) {
-      issuesByVersion[v.displayName] = await topIssues(app.appId, v.displayName, config.issueLookbackDays);
+    const [latest] = await releaseVersions(app.appId, config.releaseLookbackDays);
+    if (!latest) {
+      appStatus.push({ app: app.name, latestVersion: null, status: "sin datos en Crashlytics" });
+      continue;
     }
-
+    const prevAppState = prevState.apps[app.appId];
+    const { since, reset } = countingSince(prevAppState, latest.displayName, now, config.initialLookbackDays);
+    const issues = await topIssues(app.appId, latest.displayName, since);
     const { findings: appFindings, appState } = detectApp({
       app,
-      prevAppState: prevState.apps[app.appId],
-      versions,
-      issuesByVersion,
-      now,
-      forgetAfterDays: config.forgetIssuesAfterDays,
+      prevAppState,
+      version: latest.displayName,
+      since,
+      reset,
+      issues,
     });
-
-    for (const f of appFindings) {
-      if (f.issue) {
-        const event = await sampleEvent(app.appId, f.issue.id, f.version).catch(() => null);
-        f.sampleEvent = event ? summarizeEvent(event) : null;
-      }
-    }
-
     nextState.apps[app.appId] = appState;
     findings.push(...appFindings);
     appStatus.push({
       app: app.name,
-      latestVersion: watched[0]?.displayName ?? null,
-      crashFreeUsersPercentage: watched[0]?.metrics.crashFreeUsersPercentage ?? null,
-      issuesInLatest: watched[0] ? issuesByVersion[watched[0].displayName].length : 0,
-      status: versions.length ? "ok" : "sin datos en Crashlytics",
+      latestVersion: latest.displayName,
+      status: prevAppState ? "ok" : "primera revisión: solo se registraron los contadores",
+      failures: appFindings.length,
     });
   } catch (err) {
     errors.push({ app: app.name, message: err.message });
     appStatus.push({ app: app.name, status: `error: ${err.message}` });
   }
 }
+
+findings.sort((a, b) => b.newEvents - a.newEvents);
 
 if (errors.length) {
   const byMessage = new Map();
@@ -94,20 +69,18 @@ if (errors.length) {
 
 const result = {
   checkedAt: now.toISOString(),
+  previousCheckAt: prevState.lastCheckedAt,
   projectId: config.projectId,
   apps: appStatus,
   findings,
-  stateChanged: JSON.stringify(nextState) !== JSON.stringify(prevState),
 };
 
 writeJson(args.out, result);
 writeJson(args["next-state"], nextState, false);
 
-const counts = findings.reduce((acc, f) => ({ ...acc, [f.type]: (acc[f.type] ?? 0) + 1 }), {});
+const failures = findings.filter((f) => f.type === "failure");
 console.log(`Revisión ${result.checkedAt}`);
-for (const s of appStatus) {
-  console.log(`- ${s.app}: ${s.latestVersion ?? "-"} (${s.status}${s.issuesInLatest != null ? `, ${s.issuesInLatest} issues` : ""})`);
-}
-console.log(`Hallazgos: ${findings.length ? JSON.stringify(counts) : "ninguno"}`);
-console.log(`Estado cambió: ${result.stateChanged}`);
+for (const s of appStatus) console.log(`- ${s.app}: ${s.latestVersion ?? "-"} (${s.status})`);
+console.log(`Fallas: ${failures.length}`);
+if (findings.some((f) => f.type === "error")) console.log("Error del monitor: se reportará.");
 console.log(`Resultado: ${args.out} | Estado nuevo: ${args["next-state"]}`);

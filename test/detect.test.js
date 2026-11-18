@@ -1,131 +1,136 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { detectApp, errorFinding, normalizeState } from "../src/detect.js";
-import { buildMessages, neutralize, toText } from "../src/format.js";
+import { cacheKey, mergeCache } from "../src/analyst/cache.js";
+import { countingSince, detectApp, errorFinding, normalizeAnalysis, normalizeState } from "../src/detect.js";
+import { detailText, handoffText, shortTitle, summaryText } from "../src/format.js";
 
-const app = { name: "Super App Android", appId: "1:1:android:abc" };
-const now = new Date("2026-11-18T16:00:00Z");
-const issue = (id, extra = {}) => ({
+const app = { name: "Super App Android", appId: "1:1:android:abc", sourceRepo: "sw-crp-super-app-android" };
+const now = new Date("2026-11-18T18:00:00Z");
+const V = "1.5.5 (290)";
+const SINCE = "2026-11-11T18:00:00.000Z";
+const issue = (id, events, extra = {}) => ({
   id,
-  title: `Error ${id}`,
+  title: `mx.liverpool.superapp.Clase${id}.<init>`,
   subtitle: "detalle <init>",
   errorType: "NON_FATAL",
-  firstSeenVersion: "1.5.5",
-  metrics: { eventsCount: "3", impactedUsersCount: "2" },
+  firstSeenVersion: "1.5.2",
+  uri: `https://console.firebase.google.com/${id}`,
+  metrics: { eventsCount: String(events), impactedUsersCount: "2" },
   ...extra,
 });
-const versions = [{ displayName: "1.5.5 (290)", metrics: { totalUsersCount: "10" } }];
 
-function run(prevAppState, list, vs = versions) {
-  return detectApp({
-    app,
-    prevAppState,
-    versions: vs,
-    issuesByVersion: vs[0] ? { [vs[0].displayName]: list } : {},
-    now,
-    forgetAfterDays: 45,
-  });
+function run(prevAppState, issues, version = V) {
+  return detectApp({ app, prevAppState, version, since: SINCE, reset: false, issues });
 }
 
-test("first run records existing issues without alerting on them", () => {
-  const { findings, appState } = run(undefined, [issue("a"), issue("b")]);
+test("first check only records counts", () => {
+  const { findings, appState } = run(undefined, [issue("a", 5)]);
+  assert.equal(findings.length, 0);
+  assert.deepEqual(appState, { version: V, since: SINCE, counts: { a: 5 } });
+});
+
+test("reports every issue whose count grew, known or new, sorted by new events", () => {
+  const prev = { version: V, since: SINCE, counts: { a: 5, b: 3 } };
+  const { findings, appState } = run(prev, [issue("a", 6), issue("b", 3), issue("c", 4)]);
   assert.deepEqual(
-    findings.map((f) => f.type),
-    ["baseline"]
+    findings.map((f) => [f.issue.id, f.newEvents, f.totalEvents]),
+    [
+      ["c", 4, 4],
+      ["a", 1, 6],
+    ]
   );
-  assert.equal(findings[0].issueCount, 2);
-  assert.deepEqual(Object.keys(appState.issues).sort(), ["a", "b"]);
-  assert.equal(appState.latestVersion, "1.5.5 (290)");
+  assert.deepEqual(appState.counts, { a: 6, b: 3, c: 4 });
+  assert.equal(findings[0].sourceRepo, "sw-crp-super-app-android");
 });
 
-test("alerts once for an issue that was not seen before", () => {
-  const prev = { latestVersion: "1.5.5 (290)", issues: { a: "2026-11-18" }, regressed: [] };
-  const first = run(prev, [issue("a"), issue("c")]);
+test("quiet when nothing grew", () => {
+  const prev = { version: V, since: SINCE, counts: { a: 5 } };
+  assert.equal(run(prev, [issue("a", 5)]).findings.length, 0);
+});
+
+test("a new release reports all of its failures", () => {
+  const prev = { version: "1.5.4 (289)", since: SINCE, counts: { a: 50 } };
+  const { findings } = run(prev, [issue("a", 2)], "1.5.6 (291)");
   assert.deepEqual(
-    first.findings.map((f) => [f.type, f.issue?.id]),
-    [["new_issue", "c"]]
+    findings.map((f) => [f.issue.id, f.newEvents]),
+    [["a", 2]]
   );
-  assert.equal(first.findings[0].issue.impactedUsersCount, 2);
-
-  const second = run(first.appState, [issue("a"), issue("c")]);
-  assert.equal(second.findings.length, 0);
 });
 
-test("alerts once when a known issue regresses", () => {
-  const prev = { latestVersion: "1.5.5 (290)", issues: { a: "2026-11-18" }, regressed: [] };
-  const regressedIssue = issue("a", { signals: ["SIGNAL_REGRESSED"] });
-  const first = run(prev, [regressedIssue]);
-  assert.deepEqual(
-    first.findings.map((f) => f.type),
-    ["regressed"]
-  );
-  assert.equal(run(first.appState, [regressedIssue]).findings.length, 0);
-
-  const cleared = run(first.appState, [issue("a")]);
-  assert.deepEqual(cleared.appState.regressed, []);
-  assert.equal(run(cleared.appState, [regressedIssue]).findings[0].type, "regressed");
+test("counting window stays fixed per version and restarts after 85 days", () => {
+  const prev = { version: V, since: SINCE, counts: {} };
+  assert.deepEqual(countingSince(prev, V, now, 7), { since: SINCE, reset: false });
+  assert.equal(countingSince(prev, "1.5.6 (291)", now, 7).reset, false);
+  assert.equal(countingSince(prev, "1.5.6 (291)", now, 7).since, "2026-11-11T18:00:00.000Z");
+  const old = { ...prev, since: "2026-08-01T00:00:00.000Z" };
+  assert.equal(countingSince(old, V, now, 7).reset, true);
+  const reset = detectApp({ app, prevAppState: old, version: V, since: SINCE, reset: true, issues: [issue("a", 9)] });
+  assert.equal(reset.findings.length, 0);
 });
 
-test("reports a new release once", () => {
-  const prev = { latestVersion: "1.5.4 (289)", issues: {}, regressed: [] };
-  const { findings, appState } = run(prev, []);
-  assert.deepEqual(
-    findings.map((f) => [f.type, f.previousVersion]),
-    [["new_version", "1.5.4 (289)"]]
-  );
-  assert.equal(run(appState, []).findings.length, 0);
+test("old or invalid state starts over", () => {
+  assert.deepEqual(normalizeState({ v: 1, apps: { x: {} } }).apps, {});
+  assert.deepEqual(normalizeState("basura").apps, {});
 });
 
-test("apps without Crashlytics data keep quiet after the baseline", () => {
-  const first = run(undefined, [], []);
-  assert.equal(first.findings[0].type, "baseline");
-  assert.equal(first.findings[0].version, null);
-  assert.equal(run(first.appState, [], []).findings.length, 0);
-});
-
-test("forgets issues not seen for a long time", () => {
-  const prev = { latestVersion: "1.5.5 (290)", issues: { old: "2026-09-01", a: "2026-11-01" }, regressed: [] };
-  const { appState } = run(prev, []);
-  assert.deepEqual(Object.keys(appState.issues), ["a"]);
-});
-
-test("invalid state falls back to an empty state", () => {
-  assert.deepEqual(normalizeState("basura"), { v: 1, apps: {}, lastError: null });
-  assert.deepEqual(normalizeState({ v: 2 }).apps, {});
-});
-
-test("the same error is reported at most every two hours", () => {
+test("the same monitor error is reported at most every six hours", () => {
   const first = errorFinding("Crashlytics 403", null, now);
   assert.equal(first.finding.type, "error");
-  const soon = errorFinding("Crashlytics 403", first.lastError, new Date(now.getTime() + 30 * 60 * 1000));
+  const soon = errorFinding("Crashlytics 403", first.lastError, new Date(now.getTime() + 2 * 60 * 60 * 1000));
   assert.equal(soon.finding, null);
-  const later = errorFinding("Crashlytics 403", first.lastError, new Date(now.getTime() + 3 * 60 * 60 * 1000));
+  const later = errorFinding("Crashlytics 403", first.lastError, new Date(now.getTime() + 7 * 60 * 60 * 1000));
   assert.equal(later.finding.type, "error");
 });
 
-test("issue messages escape Slack markup and include the analysis", () => {
-  const prev = { latestVersion: "1.5.5 (290)", issues: {}, regressed: [] };
-  const { findings } = run(prev, [issue("z")]);
-  const [msg] = buildMessages({ apps: [], findings }, { [findings[0].key]: "Probable timeout & reintento" });
-  const text = JSON.stringify(msg.blocks);
-  assert.match(text, /detalle &lt;init&gt;/);
-  assert.match(text, /Probable timeout &amp; reintento/);
-  assert.match(msg.text, /Issue nuevo en Super App Android 1\.5\.5 \(290\)/);
+test("summary is one compact line per failure and escapes Slack markup", () => {
+  const prev = { version: V, since: SINCE, counts: { a: 1 } };
+  const { findings } = run(prev, [issue("a", 3), issue("b", 1, { firstSeenVersion: "1.5.5", errorType: "FATAL" })]);
+  const text = summaryText({ checkedAt: now.toISOString(), previousCheckAt: "2026-11-18T17:00:00Z" }, findings);
+  assert.match(text, /2 fallas en Crashlytics/);
+  assert.match(text, /3 eventos nuevos entre 11:00 a\.\s?m\. y 12:00 p\.\s?m\. \(hora CDMX\)/);
+  assert.match(text, /No fatal · `Clasea\.&lt;init&gt;` · 2 eventos · desde 1\.5\.2/);
+  assert.match(text, /Crash · `Claseb\.&lt;init&gt;` · 1 evento · nuevo en esta versión/);
+  assert.match(text, /desde 1\.5\.2/);
+  assert.doesNotMatch(text, /<init>/);
 });
 
-test("text rendering for the Slack tool has no raw angle brackets", () => {
-  const prev = { latestVersion: "1.5.5 (290)", issues: {}, regressed: [] };
-  const { findings } = run(prev, [issue("z", { uri: "https://console.firebase.google.com/x" })]);
-  findings[0].sampleEvent = {
-    exception: { title: "Fatal Exception: X", message: "falló <init>" },
-    frames: ["> a.B.<init> (B.kt:1)"],
-    device: "samsung (SM-A525M)",
-    buildRevision: "d96837e13dede78c1fce7d08226836a10220ec0a",
+test("handoff names the analyst or mentions it", () => {
+  assert.match(handoffText({ count: 3, analyzed: 3, mention: null }), /\*Analista Crashlytics\*, revisa 3 fallas/);
+  assert.match(handoffText({ count: 12, analyzed: 8, mention: "<@U123>" }), /^:mag: <@U123>, revisa las 8 fallas con más eventos/);
+});
+
+test("detail reply includes the error, where it happened, the analysis and a link", () => {
+  const prev = { version: V, since: SINCE, counts: {} };
+  const [f] = run(prev, [issue("a", 4)]).findings;
+  f.sampleEvent = { blameFrame: "mx.liverpool.superapp.Clasea.<init> (Clasea.kt:63) [com.liverpool.superapp1]" };
+  const text = detailText(f, { cause: "La app espera demasiado & se rinde.", fix: "Subir el tiempo de espera." }, 1, 2);
+  assert.match(text, /^\*1\/2 · Super App Android 1\.5\.5 \(290\)\* · No fatal/);
+  assert.match(text, /\*Dónde:\* `Clasea\.&lt;init&gt; \(Clasea\.kt:63\)`\n/);
+  assert.match(text, /\*Eventos:\* 4 nuevos · 4 en esta versión · 2 usuarios · desde 1\.5\.2/);
+
+  f.sampleEvent = {
+    blameFrame: `${f.issue.title} (Clasea.java:63) [com.liverpool.superapp1]`,
+    frames: [`> ${f.issue.title} (Clasea.java:63)`, "  mx.liverpool.superapp.Arranque.protegido (Arranque.kt:55) [x]"],
   };
-  const [text] = buildMessages({ apps: [], findings }, {}, { esc: neutralize }).map(toText);
-  assert.doesNotMatch(text, /[<>]/);
-  assert.match(text, /‹init›/);
-  assert.match(text, /commit d96837e13d/);
-  assert.match(text, /Abrir en Crashlytics: https:\/\/console\.firebase\.google\.com\/x/);
-  assert.match(text, /Usuarios \/ eventos\*: 2 \/ 3/);
+  assert.match(detailText(f, null, 1, 1), /\*Dónde:\* `Arranque\.protegido \(Arranque\.kt:55\)`/);
+  assert.match(text, /\*Qué está pasando:\* La app espera demasiado &amp; se rinde\./);
+  assert.match(text, /\*Solución propuesta:\* Subir el tiempo de espera\./);
+  assert.match(text, /<https:\/\/console\.firebase\.google\.com\/a\|Ver en Crashlytics>/);
+});
+
+test("short titles keep the last class and method", () => {
+  assert.equal(shortTitle("mx.liverpool.a.B$C.<init>"), "B$C.<init>");
+  assert.equal(shortTitle("[libc.so] __futex_wait_ex"), "[libc.so] __futex_wait_ex");
+  assert.equal(shortTitle("package:hive_ce/x.dart - StorageBackendVm.initialize"), "StorageBackendVm.initialize");
+});
+
+test("analyses are cached per issue and version and reused", () => {
+  const f = { key: "1:1:android:abc:a", version: V, analysis: null };
+  const { cache, resolved } = mergeCache({}, [f], { [f.key]: { causa: "x", solucion: "y" } }, now);
+  assert.deepEqual(resolved.get(f.key), { cause: "x", fix: "y" });
+  assert.deepEqual(cache[cacheKey(f)], { cause: "x", fix: "y", at: "2026-11-18" });
+
+  const again = mergeCache(cache, [{ ...f, analysis: cache[cacheKey(f)] }], {}, now);
+  assert.equal(again.resolved.get(f.key).cause, "x");
+  assert.equal(normalizeAnalysis(""), null);
 });

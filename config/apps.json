@@ -1,10 +1,9 @@
 {
   "projectId": "crp-dev-dig-superapp",
   "projectNumber": "393935496247",
-  "watchLatestVersions": 1,
-  "issueLookbackDays": 7,
+  "initialLookbackDays": 7,
   "releaseLookbackDays": 30,
-  "forgetIssuesAfterDays": 45,
+  "maxAnalyzedFailures": 8,
   "apps": [
     {
       "name": "Super App Android",
