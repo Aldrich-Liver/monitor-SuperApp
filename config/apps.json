@@ -1,0 +1,32 @@
+{
+  "projectId": "crp-dev-dig-superapp",
+  "projectNumber": "393935496247",
+  "watchLatestVersions": 1,
+  "issueLookbackDays": 7,
+  "releaseLookbackDays": 30,
+  "forgetIssuesAfterDays": 45,
+  "apps": [
+    {
+      "name": "Super App Android",
+      "appId": "1:393935496247:android:0eb1222bba3d03d8ee8bb2",
+      "bundle": "com.liverpool.superapp1",
+      "sourceRepo": "sw-crp-super-app-android"
+    },
+    {
+      "name": "Super App iOS",
+      "appId": "1:393935496247:ios:4851fc5034ce76a4ee8bb2",
+      "bundle": "com.example.superAppV2",
+      "sourceRepo": "sw-crp-super-app-ios"
+    },
+    {
+      "name": "Contacto Logístico Android",
+      "appId": "1:393935496247:android:6cfb996092b513b2ee8bb2",
+      "bundle": "mx.liverpool.contactologistico"
+    },
+    {
+      "name": "Contacto Logístico iOS",
+      "appId": "1:393935496247:ios:9ad94dee4e3430d6ee8bb2",
+      "bundle": "mx.liverpool.contactolog"
+    }
+  ]
+}

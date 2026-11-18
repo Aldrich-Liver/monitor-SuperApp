@@ -1,0 +1,16 @@
+{
+  "name": "crashlytics-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Detecta issues nuevos de Crashlytics en la última versión de cada app y los reporta por Slack.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "node src/check.js",
+    "notify": "node src/notify.js",
+    "render": "node src/notify.js --render .monitor/messages.json",
+    "test": "node --test test/*.test.js"
+  }
+}
