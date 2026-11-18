@@ -15,8 +15,10 @@ function truncate(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function clock(iso) {
-  return new Date(iso).toLocaleTimeString("es-MX", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
+function clock(iso, reference) {
+  const time = new Date(iso).toLocaleTimeString("es-MX", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
+  const day = (d) => new Date(d).toLocaleDateString("es-MX", { timeZone: TZ, day: "numeric", month: "short" });
+  return reference && day(iso) !== day(reference) ? `el ${day(iso)} a las ${time}` : time;
 }
 
 /** `mx.liverpool.app.Clase$Interna.<init>` -> `Clase$Interna.<init>`, readable in a one-line summary. */
@@ -55,12 +57,13 @@ function plural(n, one, many) {
 
 export function summaryText(result, failures) {
   const window = result.previousCheckAt
-    ? `entre ${clock(result.previousCheckAt)} y ${clock(result.checkedAt)} (hora CDMX)`
+    ? `entre ${clock(result.previousCheckAt, result.checkedAt)} y ${clock(result.checkedAt)} (hora CDMX)`
     : `hasta ${clock(result.checkedAt)} (hora CDMX)`;
   const totalEvents = failures.reduce((n, f) => n + f.newEvents, 0);
   const lines = [
     `:rotating_light: *${plural(failures.length, "falla", "fallas")} en Crashlytics* · ${plural(totalEvents, "evento nuevo", "eventos nuevos")} ${window}`,
   ];
+  if (result.test) lines.unshift(":test_tube: *PRUEBA del monitor*: falla real, pero este mensaje no es una alerta nueva.");
   for (const f of failures.slice(0, MAX_LISTED)) {
     lines.push(
       `• *${escape(f.app)} ${escape(f.version)}* · ${ERROR_TYPE_LABEL[f.issue.errorType] ?? f.issue.errorType} · ` +

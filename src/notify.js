@@ -46,6 +46,11 @@ async function analystMention() {
   });
 }
 
+if (result.test && !dryRun && !(process.env.ANALYST_WEBHOOK_URL?.trim() && process.env.ANALYST_WEBHOOK_KEY?.trim())) {
+  console.error("Prueba cancelada antes de publicar: faltan ANALYST_WEBHOOK_URL o ANALYST_WEBHOOK_KEY.");
+  process.exit(1);
+}
+
 for (const e of errors) await post(errorText(e.message));
 
 if (failures.length) {
@@ -62,6 +67,7 @@ if (failures.length) {
     channel: parent.channel,
     thread_ts: parent.ts,
     checkedAt: result.checkedAt,
+    ...(result.test ? { test: true } : {}),
     failures: analyzed.map(({ type, ...f }) => f),
   };
   if (dryRun) {

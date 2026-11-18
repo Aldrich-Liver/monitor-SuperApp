@@ -92,6 +92,9 @@ test("summary is one compact line per failure and escapes Slack markup", () => {
   assert.match(text, /Crash · `Claseb\.&lt;init&gt;` · 1 evento · nuevo en esta versión/);
   assert.match(text, /desde 1\.5\.2/);
   assert.doesNotMatch(text, /<init>/);
+  assert.doesNotMatch(text, /PRUEBA/);
+  const testText = summaryText({ test: true, checkedAt: now.toISOString(), previousCheckAt: null }, findings);
+  assert.match(testText, /^:test_tube: \*PRUEBA del monitor\*/);
 });
 
 test("handoff names the analyst or mentions it", () => {
