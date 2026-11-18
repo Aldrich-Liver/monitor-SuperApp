@@ -1,7 +1,7 @@
 {
   "display_information": {
     "name": "Revisor de PRs",
-    "description": "Revisa los PR de Super App (correcciones, funciones nuevas y demás) según los lineamientos, skills y documentos del equipo, y responde en el hilo.",
+    "description": "Revisa los PR de Super App con los lineamientos, skills y documentos del equipo, y responde en el hilo.",
     "background_color": "#2e6b3a"
   },
   "features": {
