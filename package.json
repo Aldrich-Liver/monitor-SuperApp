@@ -9,6 +9,7 @@
   },
   "scripts": {
     "check": "node src/check.js",
+    "render": "node src/render.js",
     "notify": "node src/notify.js",
     "simulate": "node src/simulate.js",
     "details": "node src/analyst/details.js",

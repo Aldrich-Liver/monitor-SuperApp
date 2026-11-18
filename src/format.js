@@ -11,6 +11,14 @@ export function escape(text = "") {
   return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/**
+ * For text handed to Cursor's Send to Slack tool, which may or may not escape it: angle brackets
+ * become look-alikes so `<init>` survives either way.
+ */
+export function neutralize(text = "") {
+  return String(text).replace(/</g, "‹").replace(/>/g, "›");
+}
+
 function truncate(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
@@ -55,7 +63,8 @@ function plural(n, one, many) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-export function summaryText(result, failures) {
+/** `ref` is how the monitor bot finds this message in the channel when Cursor posts it. */
+export function summaryText(result, failures, { esc = escape, ref } = {}) {
   const window = result.previousCheckAt
     ? `entre ${clock(result.previousCheckAt, result.checkedAt)} y ${clock(result.checkedAt)} (hora CDMX)`
     : `hasta ${clock(result.checkedAt)} (hora CDMX)`;
@@ -66,12 +75,12 @@ export function summaryText(result, failures) {
   if (result.test) lines.unshift(":test_tube: *PRUEBA del monitor*: falla real, pero este mensaje no es una alerta nueva.");
   for (const f of failures.slice(0, MAX_LISTED)) {
     lines.push(
-      `• *${escape(f.app)} ${escape(f.version)}* · ${ERROR_TYPE_LABEL[f.issue.errorType] ?? f.issue.errorType} · ` +
-        `\`${escape(shortTitle(f.issue.title))}\` · ${plural(f.newEvents, "evento", "eventos")} · ${sinceLabel(f)}`
+      `• *${esc(f.app)} ${esc(f.version)}* · ${ERROR_TYPE_LABEL[f.issue.errorType] ?? f.issue.errorType} · ` +
+        `\`${esc(shortTitle(f.issue.title))}\` · ${plural(f.newEvents, "evento", "eventos")} · ${sinceLabel(f)}`
     );
   }
   if (failures.length > MAX_LISTED) lines.push(`_y ${plural(failures.length - MAX_LISTED, "falla más", "fallas más")}_`);
-  lines.push(":thread: Detalle y solución propuesta en el hilo.");
+  lines.push(`:thread: Detalle y solución propuesta en el hilo.${ref ? ` · Ref. ${ref}` : ""}`);
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }
 
@@ -104,6 +113,10 @@ export function detailText(d, analysis, index, total) {
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }
 
-export function errorText(message) {
-  return `:x: *El monitor de Crashlytics no pudo revisar*\n\`\`\`${escape(truncate(message, 2500))}\`\`\``;
+export function errorText(message, { esc = escape } = {}) {
+  return `:x: *El monitor de Crashlytics no pudo revisar*\n\`\`\`${esc(truncate(message, 2500))}\`\`\``;
+}
+
+export function threadHeaderText(ref) {
+  return `:thread: Detalle de la alerta de Crashlytics Ref. ${ref}`;
 }

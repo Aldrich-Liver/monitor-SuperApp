@@ -12,6 +12,18 @@ export function slackClient({ token, channel } = {}) {
   if (!token || !channel) return null;
   return {
     channel,
+    /** Needs `groups:history` (private channel) or `channels:history` (public). */
+    async findMessage(needle, oldestIso) {
+      const params = new URLSearchParams({ channel, limit: "50" });
+      if (oldestIso) params.set("oldest", String(new Date(oldestIso).getTime() / 1000));
+      const res = await fetch(`https://slack.com/api/conversations.history?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json();
+      if (!body.ok) throw new Error(`Slack conversations.history: ${body.error}`);
+      const found = body.messages.find((m) => JSON.stringify(m).includes(needle));
+      return found ? { ts: found.ts, channel } : null;
+    },
     async post(text, threadTs) {
       const res = await fetch("https://slack.com/api/chat.postMessage", {
         method: "POST",

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { cacheKey, mergeCache } from "../src/analyst/cache.js";
 import { countingSince, detectApp, errorFinding, normalizeAnalysis, normalizeState } from "../src/detect.js";
-import { detailText, handoffText, shortTitle, summaryText } from "../src/format.js";
+import { detailText, handoffText, neutralize, shortTitle, summaryText } from "../src/format.js";
 
 const app = { name: "Super App Android", appId: "1:1:android:abc", sourceRepo: "sw-crp-super-app-android" };
 const now = new Date("2026-11-18T18:00:00Z");
@@ -95,6 +95,10 @@ test("summary is one compact line per failure and escapes Slack markup", () => {
   assert.doesNotMatch(text, /PRUEBA/);
   const testText = summaryText({ test: true, checkedAt: now.toISOString(), previousCheckAt: null }, findings);
   assert.match(testText, /^:test_tube: \*PRUEBA del monitor\*/);
+
+  const forCursor = summaryText({ checkedAt: now.toISOString() }, findings, { esc: neutralize, ref: "CR-ABC123" });
+  assert.match(forCursor, /`Claseb\.‹init›`/);
+  assert.match(forCursor, /en el hilo\. · Ref\. CR-ABC123$/);
 });
 
 test("handoff names the analyst or mentions it", () => {
