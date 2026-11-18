@@ -72,7 +72,7 @@ export function summaryText(result, failures, { esc = escape, ref } = {}) {
   const lines = [
     `:rotating_light: *${plural(failures.length, "falla", "fallas")} en Crashlytics* · ${plural(totalEvents, "evento nuevo", "eventos nuevos")} ${window}`,
   ];
-  if (result.test) lines.unshift(":test_tube: *PRUEBA del monitor*: falla real, pero este mensaje no es una alerta nueva.");
+  if (result.test && result.testLabel !== false) lines.unshift(":test_tube: *PRUEBA del monitor*: falla real, pero este mensaje no es una alerta nueva.");
   for (const f of failures.slice(0, MAX_LISTED)) {
     lines.push(
       `• *${esc(f.app)} ${esc(f.version)}* · ${ERROR_TYPE_LABEL[f.issue.errorType] ?? f.issue.errorType} · ` +

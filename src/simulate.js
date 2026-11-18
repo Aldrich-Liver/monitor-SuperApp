@@ -9,6 +9,7 @@ const { values: args } = parseArgs({
     app: { type: "string" },
     issue: { type: "string" },
     out: { type: "string", default: ".monitor/test-result.json" },
+    "no-label": { type: "boolean", default: false },
   },
 });
 
@@ -45,6 +46,7 @@ if (!findings.length) {
 
 const result = {
   test: true,
+  ...(args["no-label"] ? { testLabel: false } : {}),
   checkedAt: now.toISOString(),
   previousCheckAt: since,
   projectId: config.projectId,
