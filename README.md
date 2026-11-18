@@ -70,13 +70,13 @@ npm test
 
 La herramienta Send to Slack de las automatizaciones no devuelve el identificador del mensaje y por eso no puede responder en hilos. El monitor publica con un bot propio.
 
-1. En [api.slack.com/apps](https://api.slack.com/apps), elige **Create New App > From scratch**, ponle de nombre `Monitor Crashlytics` y selecciona el workspace.
-2. En **OAuth & Permissions > Bot Token Scopes**, agrega `chat:write`.
-3. Haz clic en **Install to Workspace** y copia el **Bot User OAuth Token** (`xoxb-…`) al secreto `SLACK_BOT_TOKEN`.
+1. En [api.slack.com/apps](https://api.slack.com/apps), elige **Create New App > From a manifest**, selecciona el workspace y pega [`slack/monitor-manifest.json`](slack/monitor-manifest.json). Ya trae el nombre y el único permiso que usa, `chat:write`.
+2. Revisa el resumen y haz clic en **Create**.
+3. En **Install App**, haz clic en **Install to Workspace** y copia el **Bot User OAuth Token** (`xoxb-…`) al secreto `SLACK_BOT_TOKEN`.
 4. En `#team-mobile`, escribe `/invite @Monitor Crashlytics`.
 5. Para el ID del canal, abre los detalles de `#team-mobile`; el ID (`C…`) está al final. Guárdalo en el secreto `SLACK_CHANNEL`.
 
-Opcional: para que el Analista aparezca como un usuario aparte y se pueda arrobar, crea una segunda app, `Analista Crashlytics`, con los mismos pasos. Guarda su token en `SLACK_ANALYST_BOT_TOKEN` y su mención en `SLACK_ANALYST_MENTION`, con el formato `<@U…>` y el Member ID que aparece en su perfil. Sin estos secretos, el hilo nombra al Analista en negritas y el bot del monitor publica sus respuestas.
+Opcional: para que el Analista aparezca como un usuario aparte y se pueda arrobar, crea una segunda app con los mismos pasos y [`slack/analyst-manifest.json`](slack/analyst-manifest.json). Guarda su token en `SLACK_ANALYST_BOT_TOKEN` y su mención en `SLACK_ANALYST_MENTION`, con el formato `<@U…>` y el Member ID que aparece en su perfil. Sin estos secretos, el hilo nombra al Analista en negritas y el bot del monitor publica sus respuestas.
 
 ### 2. Automatización Analista Crashlytics
 

@@ -1,0 +1,23 @@
+{
+  "display_information": {
+    "name": "Monitor Crashlytics",
+    "description": "Reporta cada hora las fallas de Crashlytics de Super App y Contacto Logístico.",
+    "background_color": "#b3261e"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Monitor Crashlytics",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": ["chat:write"]
+    }
+  },
+  "settings": {
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}
