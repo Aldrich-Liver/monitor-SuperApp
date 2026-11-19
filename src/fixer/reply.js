@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { readJson } from "../files.js";
 import { fixResultText } from "../format.js";
 import { parsePr } from "../reviewer/pr.js";
-import { slackClient } from "../slack.js";
+import { fixerPoster } from "./requests.js";
 
 const { values: args } = parseArgs({
   options: {
@@ -35,9 +35,9 @@ if (args["dry-run"]) {
   console.log(`--- respuesta en hilo ---\n${text}`);
   process.exit(0);
 }
-const slack = slackClient({ token: process.env.SLACK_ANALYST_BOT_TOKEN || process.env.SLACK_BOT_TOKEN, channel: context.channel });
+const slack = fixerPoster(context.channel);
 if (!slack) {
-  console.error("Falta SLACK_ANALYST_BOT_TOKEN o SLACK_BOT_TOKEN.");
+  console.error("Falta SLACK_FIXER_BOT_TOKEN (o SLACK_ANALYST_BOT_TOKEN / SLACK_BOT_TOKEN).");
   process.exit(1);
 }
 await slack.post(text, context.thread_ts);

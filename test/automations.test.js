@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { crashlyticsLink, failureFromThread, fixInProgress, fixRequester, linkedFixPrs, threadTarget } from "../src/fixer/thread.js";
+import { pendingBotMentions } from "../src/reviewer/thread.js";
 import { fixResultText, prOpenedText, testsComment, testsText, twinOpenedText } from "../src/format.js";
 import { compileErrors, lintVerdict, parseJunit, parseLint, testStatus } from "../src/tester/results.js";
 
@@ -175,4 +176,19 @@ test("the Corrector's answer links each PR in the thread", () => {
   assert.match(text, /^:hammer_and_wrench: \*Corrección propuesta\*\nYa no se frena\.\n• <https:\/\/github\.com\/.+\/pull\/14\|PR #14> · sw-crp-super-app-android/);
   assert.match(text, /\*Qué no se probó:\* iOS no se compiló/);
   assert.match(fixResultText({ status: "no-change", summary: "Es del sistema." }, []), /^:information_source: \*Sin cambios de código\*\nEs del sistema\.$/);
+});
+
+test("finds mentions of the Corrector that it hasn't answered, in any thread", async () => {
+  const NOW = 1_800_000_000_000;
+  const at = (minutesAgo) => String(NOW / 1000 - minutesAgo * 60);
+  const fixer = { userId: "UFIX", botId: "BFIX" };
+  const bug = { ts: at(300), text: report.text, reply_count: 3, latest_reply: at(5) };
+  const done = { ts: at(400), text: "otra falla", reply_count: 2, latest_reply: at(30) };
+  const threads = {
+    [bug.ts]: [bug, { ts: at(200), bot_id: "B2", text: detail.text }, { ts: at(5), user: "UDEV", text: "<@UFIX> corrige esta falla" }],
+    [done.ts]: [done, { ts: at(40), user: "UDEV", text: "<@UFIX> arréglala" }, { ts: at(30), bot_id: "BFIX", user: "UFIX", text: "toma" }],
+  };
+  const slack = { channel: "C1", history: async () => [bug, done], replies: async (ts) => threads[ts] };
+  const pending = await pendingBotMentions(slack, fixer, { now: NOW });
+  assert.deepEqual(pending.map((p) => [p.thread_ts, p.request.user, p.messages.length]), [[bug.ts, "UDEV", 3]]);
 });

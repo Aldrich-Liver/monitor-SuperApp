@@ -45,6 +45,7 @@ if (!slack) {
   console.log("Sin SLACK_BOT_TOKEN o SLACK_CHANNEL: el resultado va solo al PR.");
   process.exit(0);
 }
+const poster = slackClient({ token: process.env.SLACK_TESTER_BOT_TOKEN || process.env.SLACK_BOT_TOKEN });
 const thread = await findPrThread(slack, result.pr, { hours: Number(args.hours) }).catch((err) => {
   console.error(`No se pudo buscar el hilo del PR: ${err.message}`);
   return null;
@@ -53,5 +54,5 @@ if (!thread) {
   console.log(`No hay un hilo en el canal con ${result.pr.url}: el resultado va solo al PR.`);
   process.exit(0);
 }
-await slack.post(testsText(result), thread.thread_ts);
+await poster.post(testsText(result), thread.thread_ts);
 console.log(`Resultado publicado en el hilo ${thread.thread_ts} (${result.status}).`);

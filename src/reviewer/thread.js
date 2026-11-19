@@ -81,16 +81,24 @@ export function answered(messages, request, reviewer) {
  * The bot does not receive Slack events, so the hourly monitor runs this to pick those mentions up.
  */
 export async function pendingMentions(slack, reviewer, { hours = 26, now = Date.now() } = {}) {
+  const pending = await pendingBotMentions(slack, reviewer, { hours, now });
+  return pending.map((item) => ({ ...item, prs: prUrls(textOf(item.request)) })).filter((item) => item.prs.length);
+}
+
+/**
+ * Messages that mention a bot and have no reply from it after them, with their thread. The bots
+ * don't receive Slack events, so the hourly monitor looks for their mentions.
+ */
+export async function pendingBotMentions(slack, bot, { hours = 26, now = Date.now() } = {}) {
   const oldest = secondsAgo(hours, now);
-  const tag = `<@${reviewer.userId}>`;
+  const tag = `<@${bot.userId}>`;
   const pending = [];
   for (const parent of await recentThreads(slack, hours, now)) {
     const messages = await threadMessages(slack, parent);
     for (const m of messages) {
-      if (Number(m.ts) < oldest || m.user === reviewer.userId || !(m.text ?? "").includes(tag)) continue;
-      const prs = prUrls(textOf(m));
-      if (!prs.length || answered(messages, m, reviewer)) continue;
-      pending.push({ thread_ts: parent.ts, request: m, messages, prs });
+      if (Number(m.ts) < oldest || m.user === bot.userId || !(m.text ?? "").includes(tag)) continue;
+      if (answered(messages, m, bot)) continue;
+      pending.push({ thread_ts: parent.ts, request: m, messages });
     }
   }
   return pending;

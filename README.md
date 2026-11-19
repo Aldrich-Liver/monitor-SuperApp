@@ -9,7 +9,7 @@ Funciona con seis automatizaciones de Cursor en el environment **Super App**:
 3. **Revisor de PRs**, activada por webhook. Revisa cualquier PR de las apps (corrección de una falla, función nueva, mejora, versión…) con los lineamientos, skills y documentos del equipo que viven en el repo, da el visto bueno o pide solo los cambios necesarios, comenta en el PR de GitHub y responde en el hilo.
 4. **PR nuevo**, activada por GitHub al abrir un PR (o marcarlo listo para revisión) en cualquiera de las dos apps. Le da al PR su hilo en `#team-mobile` (o usa el que ya tiene, como el de la falla que corrige), avisa si falta el PR gemelo en la otra plataforma y pide la revisión al Revisor de PRs, sin que nadie tenga que arrobarlo.
 5. **Pruebas de PRs**, activada por GitHub al abrir un PR de Android o subirle commits. Corre `./gradlew :app:testDevDebugUnitTest :app:lintDevDebug` sobre el último commit y publica el resultado en el PR y en su hilo. Mientras el CI esté detenido, es la única verificación automática del código antes del merge.
-6. **Corrector**, activada por webhook cuando alguien escribe `@Cursor corrige esta falla` en el hilo de una falla. Sigue la skill `investigar-crash` de las apps, corrige la causa en Android y en iOS, abre un PR por repo y responde en el hilo con los enlaces. Eso pone la falla *En corrección*, y la automatización PR nuevo pide la revisión y las pruebas en el mismo hilo.
+6. **Corrector**, activada por webhook cuando alguien escribe `@Cursor corrige esta falla` o arroba a `@Corrector de fallas` en el hilo de una falla. Sigue la skill `investigar-crash` de las apps, corrige la causa en Android y en iOS, abre un PR por repo y responde en el hilo con los enlaces. Eso pone la falla *En corrección*, y la automatización PR nuevo pide la revisión y las pruebas en el mismo hilo.
 
 ```
 :rotating_light: Falla nueva en Super App Android 1.5.5 (290) · No fatal · ArranqueAnfitrion$PasoArranqueExcedido.<init>
@@ -128,7 +128,12 @@ iOS no se prueba: los agentes en la nube corren en Linux y no hay Xcode. El Revi
 
 ## Corrector
 
-En el hilo de una falla, alguien escribe `@Cursor corrige esta falla`. Cursor lee [`AGENTS.md`](AGENTS.md) y ejecuta `npm run fix:request -- CR-…` con la referencia del mensaje que abre el hilo. El comando reconoce la falla con lo que ya está en el hilo (el reporte y el detalle del Analista, con su enlace a Crashlytics), avisa que el Corrector la tomó y lo activa por webhook. No lo activa si la falla ya tiene un PR en su hilo o si el Corrector la tomó hace menos de 2 h; `--force` pide otra corrección de todos modos.
+Se pide en el hilo de la falla, de una de estas formas:
+
+- **Arrobando a Cursor:** `@Cursor corrige esta falla`. Cursor lee [`AGENTS.md`](AGENTS.md) y ejecuta `npm run fix:request -- CR-…` con la referencia del mensaje que abre el hilo. Empieza en segundos.
+- **Arrobando al bot:** `@Corrector de fallas`. El bot no recibe eventos de Slack, así que el monitor, en su corrida de cada hora, encuentra la mención con `npm run fix:scan` y activa la corrección. El bot contesta toda mención, aunque sea para decir que la falla ya tiene PR, y esa respuesta es la que la marca como atendida.
+
+Las dos formas hacen lo mismo. El comando reconoce la falla con lo que ya está en el hilo (el reporte y el detalle del Analista, con su enlace a Crashlytics), avisa que el Corrector la tomó y lo activa por webhook. No lo activa si la falla ya tiene un PR en su hilo o si el Corrector la tomó hace menos de 2 h; `--force` pide otra corrección de todos modos.
 
 El Corrector ejecuta `npm run fix:context`, que agrega un evento de muestra de Crashlytics con su stack trace y el commit de la versión, y sigue la skill `investigar-crash` de las apps en modo autónomo (`GUIA-DEL-EQUIPO.md` §2):
 
@@ -172,6 +177,8 @@ Pruebas de PRs y Corrector necesitan además el JDK 21 y el SDK de Android del e
 | `SLACK_REVIEWER_BOT_TOKEN` | Token del bot del Revisor. Con él, el Revisor responde con su propio nombre y `review:scan` encuentra sus menciones. Sin él, responde el bot del Analista o el del monitor. |
 | `GITHUB_TOKEN` | Opcional: token de solo lectura para la API de GitHub. Sin él, el Revisor usa el token que el environment le da a git. |
 | `FIXER_WEBHOOK_URL`, `FIXER_WEBHOOK_KEY` | URL y llave del webhook de la automatización Corrector. |
+| `SLACK_FIXER_BOT_TOKEN` | Token del bot del Corrector. Con él, el Corrector responde con su propio nombre y `fix:scan` encuentra sus menciones. Sin él, responde el bot del Analista o el del monitor, y solo se le pide con `@Cursor`. |
+| `SLACK_TESTER_BOT_TOKEN` | Opcional: token del bot de Pruebas de PRs, para que los resultados salgan con su propio nombre. Sin él, responde el bot del monitor. |
 
 ## Uso local
 
@@ -211,6 +218,7 @@ npm run tests:reply -- --dry-run             # escribe .tester/comment.md y mues
 
 # Corrector: el payload que imprime fix:request va en .fixer/payload.json
 npm run fix:request -- CR-E6CF6D --dry-run
+npm run fix:scan -- --dry-run                # menciones al bot del Corrector sin responder
 npm run fix:context                          # escribe .fixer/context.json
 # escribe .fixer/result.json: { "status": "fixed" | "no-change" | "error", "summary": "...", "prs": [...] }
 npm run fix:reply -- --dry-run
@@ -270,6 +278,8 @@ En [cursor.com/automations](https://cursor.com/automations):
 
 ### 6. Pruebas de PRs
 
+Opcional: crea la app de Slack con los pasos del bot, usando [`slack/tester-manifest.json`](slack/tester-manifest.json). Guarda su token en `SLACK_TESTER_BOT_TOKEN` e invítala con `/invite @Pruebas de PRs`.
+
 - **Disparadores:** GitHub, *Pull request opened* y *Pull request pushed*, en `sw-crp-super-app-android`.
 - **Environment:** Super App.
 - **Herramientas:** Comment on pull request, sin aprobaciones: solo comenta.
@@ -278,13 +288,14 @@ En [cursor.com/automations](https://cursor.com/automations):
 
 ### 7. Corrector
 
-1. Crea la automatización:
+1. Crea la app de Slack con los pasos del bot, usando [`slack/fixer-manifest.json`](slack/fixer-manifest.json). Guarda su token en `SLACK_FIXER_BOT_TOKEN` e invítala con `/invite @Corrector de fallas`.
+2. Crea la automatización:
    - **Disparador:** Webhook. Copia la URL y la llave a `FIXER_WEBHOOK_URL` y `FIXER_WEBHOOK_KEY`.
    - **Environment:** Super App, con los dos repos de las apps.
    - **Herramientas:** la de crear pull requests, que viene activada.
    - **Prompt:** [`automation/fixer-prompt.md`](automation/fixer-prompt.md).
    - **Modelo:** uno fuerte en código.
-2. Agrega a la regla de enrutamiento de `@Cursor` la palabra `corrige`, apuntando al environment Super App, igual que `revisa`.
+3. Agrega a la regla de enrutamiento de `@Cursor` la palabra `corrige`, apuntando al environment Super App, igual que `revisa`.
 
 Todos los secretos van en **Cloud Agents > Secrets** como Runtime Secret, disponibles para el environment Super App.
 

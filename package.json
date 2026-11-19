@@ -23,6 +23,7 @@
     "tests:run": "node src/tester/run.js",
     "tests:reply": "node src/tester/reply.js",
     "fix:request": "node src/fixer/request.js",
+    "fix:scan": "node src/fixer/scan.js",
     "fix:context": "node src/fixer/context.js",
     "fix:reply": "node src/fixer/reply.js",
     "test": "node --test test/*.test.js"
