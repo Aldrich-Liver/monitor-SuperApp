@@ -280,7 +280,7 @@ function testsHeadline(result) {
   return [counts, lintPart, minutes(result.durationS)].filter(Boolean).join(" · ");
 }
 
-const TEST_STATUS = {
+export const TEST_STATUS = {
   passed: ":white_check_mark: *Pruebas OK*",
   failed: ":x: *Pruebas fallidas*",
   "build-failed": ":x: *No compila*",

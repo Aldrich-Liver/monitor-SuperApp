@@ -4,6 +4,7 @@ import { crashlyticsLink, failureFromThread, fixInProgress, fixRequester, linked
 import { parsePr } from "../src/reviewer/pr.js";
 import { pendingBotMentions, reviewVerdict } from "../src/reviewer/thread.js";
 import { fixResultText, prOpenedText, testsComment, testsText, twinOpenedText } from "../src/format.js";
+import { testsVerdict } from "../src/tester/thread.js";
 import { compileErrors, lintVerdict, parseJunit, parseLint, testStatus } from "../src/tester/results.js";
 
 const config = {
@@ -224,4 +225,16 @@ test("the Corrector first posts its PRs as in verification, without counting as 
   assert.match(final, /\*Pruebas:\* 2219 pruebas OK\n\*Revisión:\* Visto bueno en los dos PR, 2 rondas/);
   assert.match(final, /\*Pendiente para una persona:\* Probar el APK release/);
   assert.ok(!fixInProgress([report, ack, { ts: "1795061100.000100", text: interim }, { ts: "1795062000.000100", text: final }], now));
+});
+
+test("reads the result Pruebas de PRs posted for the PR's latest commit", () => {
+  const pr = parsePr(ANDROID_PR);
+  const base = { app: "Super App Android", tasks: [], tests: { total: 5, failed: 0, failures: [] }, lint: null, durationS: 200 };
+  const failed = { ts: "2", text: testsText({ ...base, pr: { url: ANDROID_PR, number: 14, headSha: "aaaaaaa111" }, status: "failed", tests: { total: 5, failed: 1, failures: [] } }) };
+  const passed = { ts: "3", text: testsText({ ...base, pr: { url: ANDROID_PR, number: 14, headSha: "bbbbbbb222" }, status: "passed" }) };
+  const review = { ts: "4", text: `:eyes: Reviso el <${ANDROID_PR}|PR #14> de Super App Android…` };
+  assert.equal(testsVerdict([report, failed, review], pr, "aaaaaaa111").status, "failed");
+  assert.equal(testsVerdict([report, failed, review], pr, "bbbbbbb222"), null);
+  assert.deepEqual(testsVerdict([report, failed, passed, review], pr, "bbbbbbb222"), { status: "passed", ts: "3", text: passed.text });
+  assert.equal(testsVerdict([report, passed], parsePr("https://github.com/Aldrich-Liver/sw-crp-super-app-android/pull/15"), "bbbbbbb222"), null);
 });

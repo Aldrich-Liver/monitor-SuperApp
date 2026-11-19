@@ -145,13 +145,22 @@ El Corrector no termina al abrir los PR: lleva la falla hasta dejar los PR listo
 
 1. **Avisa en el hilo** con `fix:reply` y los enlaces de los PR, en estado *en verificación*. Eso pone la falla *En corrección* en el monitor. La automatización PR nuevo ve que el Corrector lleva el PR y no pide otra revisión.
 2. **Verifica en rondas**, como máximo tres:
-   1. Corre `tests:run` sobre el PR de Android y corrige en su rama lo que falle.
-   2. Pide la revisión con `review:request --thread` y espera el veredicto con `review:wait`, hasta 30 minutos.
+   1. Espera con `tests:wait` el resultado que la automatización Pruebas de PRs publica en el hilo para su último commit (GitHub la activa al abrir el PR y con cada push). Si no llega en 25 minutos, corre `tests:run` él mismo. Corrige en su rama lo que falle.
+   2. Pide la revisión a la automatización Revisor de PRs con `review:request --thread` y espera su veredicto con `review:wait`, hasta 30 minutos.
    3. Si el Revisor pide cambios, atiende los puntos válidos, hace push en la misma rama y empieza otra ronda. En la tercera ya no cambia código.
    4. Los puntos que contradicen los lineamientos no se hacen; quedan en *Pendiente para una persona*.
 3. **Responde una sola vez al final**, con la causa, los PR, el resultado de las pruebas, el veredicto del Revisor, qué no se probó y lo que queda para una persona.
 
-Las otras automatizaciones siguen corriendo sobre sus PR: Pruebas de PRs comenta en GitHub cada push del Corrector. Pero el que decide qué falta y no suelta la falla es el Corrector.
+El Corrector no repite el trabajo de las demás automatizaciones, las usa:
+
+| Automatización | Cómo la activa el Corrector | Cómo lee su resultado |
+|---|---|---|
+| Analista Crashlytics | Ya respondió en el hilo antes de que se pidiera la corrección | `fix:request` toma su causa y su solución del hilo |
+| PR nuevo | GitHub, al abrir cada PR | No hace falta: solo deja el PR en el hilo de la falla y no pide otra revisión |
+| Pruebas de PRs | GitHub, al abrir el PR de Android y con cada push | `tests:wait` lee su resultado en el hilo |
+| Revisor de PRs | Webhook, con `review:request` | `review:wait` lee su veredicto en el hilo |
+
+El que decide qué falta y no suelta la falla es el Corrector.
 
 ```
    └ @dev: @Cursor corrige esta falla
@@ -240,6 +249,7 @@ npm run fix:context                          # escribe .fixer/context.json
 # escribe .fixer/result.json: { "status": "in-review" | "fixed" | "no-change" | "error", "summary": "...", "prs": [...] }
 npm run fix:reply -- --dry-run
 npm run review:wait -- https://github.com/Aldrich-Liver/sw-crp-super-app-android/pull/3 --thread 1795046617.681619 --timeout-min 0
+npm run tests:wait -- https://github.com/Aldrich-Liver/sw-crp-super-app-android/pull/14 --thread <ts> --timeout-min 0
 npm test
 ```
 

@@ -23,6 +23,7 @@
     "pr:opened": "node src/prs/opened.js",
     "tests:run": "node src/tester/run.js",
     "tests:reply": "node src/tester/reply.js",
+    "tests:wait": "node src/tester/wait.js",
     "fix:request": "node src/fixer/request.js",
     "fix:scan": "node src/fixer/scan.js",
     "fix:context": "node src/fixer/context.js",
