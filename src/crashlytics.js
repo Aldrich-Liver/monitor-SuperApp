@@ -57,14 +57,16 @@ export async function topIssues(appId, versionDisplayName, since) {
   return groups.map((g) => ({ ...g.issue, metrics: g.metrics?.[0] ?? {} }));
 }
 
-/** Any recent event of a version; its build stamp says which commit the version was built from. */
-export async function versionEvent(appId, versionDisplayName, days = 30) {
-  const body = await get(`${appPath(appId)}/events`, {
-    page_size: 1,
-    "filter.version.display_names": versionDisplayName,
-    ...intervalParams(days),
-  });
-  return body.events?.[0] ?? null;
+/**
+ * An event of a version, whose build stamp says which commit the version was built from. The events
+ * endpoint only answers when filtered by issue, so it tries the version's issues until one has an event.
+ */
+export async function versionEvent(appId, versionDisplayName, issueIds) {
+  for (const issueId of issueIds.slice(0, 3)) {
+    const event = await sampleEvent(appId, issueId, versionDisplayName);
+    if (event) return event;
+  }
+  return null;
 }
 
 export async function sampleEvent(appId, issueId, versionDisplayName) {

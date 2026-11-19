@@ -4,7 +4,7 @@ import { versionEvent } from "./crashlytics.js";
 import { normalizeState } from "./detect.js";
 import { buildRevision } from "./event.js";
 import { readJson, writeJson } from "./files.js";
-import { findRepoDir, git, gitOk } from "./repos.js";
+import { containsChanges, findRepoDir, git, gitOk } from "./repos.js";
 import { fetchPr } from "./reviewer/github.js";
 import { prUrls } from "./reviewer/pr.js";
 import { slackClient } from "./slack.js";
@@ -89,7 +89,7 @@ function includesCommit(repo, revision, commit) {
       }
     }
   }
-  return gitOk(dir, ["merge-base", "--is-ancestor", commit, revision]);
+  return gitOk(dir, ["merge-base", "--is-ancestor", commit, revision]) || containsChanges(dir, revision, commit);
 }
 
 async function appBuild(appId) {
@@ -97,7 +97,10 @@ async function appBuild(appId) {
   if (!app?.version) return null;
   const cached = app.build?.version === app.version ? app.build : null;
   if (cached && (cached.revision || now - Date.parse(cached.checkedAt) < BUILD_RETRY_MS)) return cached;
-  const event = await versionEvent(appId, app.version).catch((err) => {
+  const issueIds = Object.entries(app.counts ?? {})
+    .sort(([, a], [, b]) => b - a)
+    .map(([id]) => id);
+  const event = await versionEvent(appId, app.version, issueIds).catch((err) => {
     console.warn(`Sin evento de ${app.version} para leer su commit: ${err.message}`);
     return null;
   });

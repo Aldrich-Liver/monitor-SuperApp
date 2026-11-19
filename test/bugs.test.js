@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
+import { containsChanges, git } from "../src/repos.js";
 import { digestBugs, digestDue, markReleased, mergedPr, pruneResolved, resolveQuiet, syncPrs, trackFailures } from "../src/bugs.js";
 import { digestText } from "../src/format.js";
 
@@ -135,6 +139,30 @@ test("events after the fixed release reopen the bug", () => {
   assert.deepEqual(back.reopened, ["app:a"]);
   assert.match(back.outbox[0].text, /Ya salió el <\S+\|PR #7> en 1\.5\.6 \(291\) y no la resolvió/);
   assert.equal(back.bugs["app:a"].fix, null);
+});
+
+test("a build from another copy of the history includes the PR when it has its changes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "monitor-repo-"));
+  try {
+    const commit = (files, message) => {
+      for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+      git(dir, ["add", "-A"]);
+      git(dir, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message]);
+      return git(dir, ["rev-parse", "HEAD"]);
+    };
+    git(dir, ["init", "-q", "-b", "main"]);
+    commit({ "Pago.kt": "uno\ndos\ntres\n", "Otro.kt": "a\n" }, "base");
+    const merged = commit({ "Pago.kt": "uno\ndos corregido\ntres\n" }, "PR #7");
+
+    git(dir, ["checkout", "-q", "--orphan", "release"]);
+    const withoutFix = commit({ "Pago.kt": "uno\ndos\ntres\n", "Otro.kt": "a\n" }, "release sin el PR");
+    const withFix = commit({ "Pago.kt": "uno\ndos corregido\ntres\n", "Otro.kt": "b\n" }, "release con el PR y más cambios");
+
+    assert.equal(containsChanges(dir, withFix, merged), true);
+    assert.equal(containsChanges(dir, withoutFix, merged), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("resolved bugs are forgotten after 30 days", () => {
