@@ -43,7 +43,7 @@ Cada issue de Crashlytics es una falla con su propio hilo, y todo lo que pasa co
 |---|---|
 | Abierta | La primera vez que el issue tiene eventos. Si sigue con eventos, solo suma al conteo: no publica de nuevo. |
 | En corrección | Alguien pegó en el hilo un PR del repo de esa app. Se lee su estado en GitHub cada hora: si se fusiona lo avisa, y si se cierra sin fusionarse la falla vuelve a abierta. |
-| En observación | Salió una versión que incluye el PR fusionado. Se confirma con el commit con el que se compiló la versión (viene en sus eventos de Crashlytics): el PR está incluido si su commit es ancestro de ese, o si el código de ese commit ya tiene los cambios del PR (los repos son copias sincronizadas y sus historias pueden no coincidir). Si la versión no trae su commit, cuenta si apareció después de la fusión. |
+| En observación | Salió una versión que incluye el PR fusionado. Se confirma con el commit con el que se compiló la versión (viene en sus eventos de Crashlytics): el PR está incluido si su commit es ancestro de ese, o si el código de ese commit ya tiene los cambios del PR; no lo está si ese commit es anterior a la fusión. Como los repos son copias sincronizadas y sus historias pueden no coincidir, en cualquier otro caso (o si la versión no trae su commit) decide por fecha y lo dice en el aviso. |
 | Resuelta | 48 h sin eventos (`resolveAfterHours`), contadas desde la versión con la corrección si la hay. Puede resolverse sin PR si deja de ocurrir sola. |
 | Reabierta | Tuvo eventos después de resuelta, o en la versión que traía la corrección. Vuelve al mismo hilo y se le pide otra vez el detalle al Analista. |
 

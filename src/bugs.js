@@ -76,7 +76,7 @@ export function trackFailures(bugs, failures, now) {
       reopened.push(f.key);
     } else if (bug.fix) {
       const pr = bug.prs.find((p) => p.number === bug.fix.pr) ?? null;
-      outbox.push(notice(bug, bugReopenedText(bug, f, { pr, fixVersion: bug.fix.version }), true));
+      outbox.push(notice(bug, bugReopenedText(bug, f, { pr, fixVersion: bug.fix.version, fixMethod: bug.fix.method }), true));
       bug.ignoredPrs = [...new Set([...bug.ignoredPrs, ...bug.prs.map(prKey)])];
       Object.assign(bug, { status: "open", prs: [], fix: null });
       reopened.push(f.key);

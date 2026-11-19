@@ -70,8 +70,13 @@ for (const bug of Object.values(bugs)) {
 }
 
 const fetchedRepos = new Set();
-/** Whether the app's latest version includes the commit; null when the commit can't be checked here. */
-function includesCommit(repo, revision, commit) {
+/**
+ * Whether the build includes the merged PR, as `{ included, method }`; null when the commits can't
+ * be read here. When the build and the merge are on unrelated histories and the PR's changes were
+ * reworked since, a build committed after the merge is taken to include it, by date.
+ */
+function buildIncludes(repo, revision, pr) {
+  const commit = pr.mergeCommit;
   const dir = findRepoDir(repo, args["repos-dir"]);
   if (!dir) return null;
   if (!fetchedRepos.has(dir)) {
@@ -89,7 +94,12 @@ function includesCommit(repo, revision, commit) {
       }
     }
   }
-  return gitOk(dir, ["merge-base", "--is-ancestor", commit, revision]) || containsChanges(dir, revision, commit);
+  if (gitOk(dir, ["merge-base", "--is-ancestor", commit, revision]) || containsChanges(dir, revision, commit)) {
+    return { included: true, method: "commit" };
+  }
+  const builtAt = Date.parse(git(dir, ["log", "-1", "--format=%cI", revision]));
+  if (!pr.mergedAt || builtAt < Date.parse(pr.mergedAt)) return { included: false, method: "commit" };
+  return { included: true, method: "date" };
 }
 
 async function appBuild(appId) {
@@ -113,8 +123,8 @@ async function releaseOf(bug, pr) {
   const build = await appBuild(bug.appId);
   if (!build) return null;
   if (build.revision) {
-    const included = includesCommit(bug.sourceRepo, build.revision, pr.mergeCommit);
-    if (included !== null) return { version: build.version, included, method: "commit" };
+    const found = buildIncludes(bug.sourceRepo, build.revision, pr);
+    if (found) return { version: build.version, ...found };
   }
   // Without the build commit: a version the monitor first saw after the merge is taken to include it.
   const included = Boolean(app.seenAt && pr.mergedAt && Date.parse(pr.mergedAt) < Date.parse(app.seenAt));

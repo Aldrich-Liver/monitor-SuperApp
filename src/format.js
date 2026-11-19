@@ -101,7 +101,7 @@ export function bugPrClosedText(pr) {
 }
 
 export function bugReleasedText(pr, version, until, method) {
-  const how = method === "date" ? " (por fecha: la versión no trae su commit)" : "";
+  const how = method === "date" ? " (por fecha: salió después de la fusión, pero no pude confirmarlo con su código)" : "";
   return `:package: *${escape(version)}* ya incluye el ${prRef(pr)}${how}. Si no hay eventos de esta falla hasta el ${dayTime(until)} (hora CDMX), la doy por resuelta.`;
 }
 
@@ -112,8 +112,11 @@ export function bugResolvedText(bug, { pr, version, released, quietHours }) {
   return `${head}\n${quietHours} h sin eventos en ${escape(version)}.${note}`;
 }
 
-export function bugReopenedText(bug, f, { resolvedAt, pr, fixVersion } = {}) {
+export function bugReopenedText(bug, f, { resolvedAt, pr, fixVersion, fixMethod } = {}) {
   const head = `:warning: *Volvió a aparecer* · ${escape(f.app)} ${escape(f.version)} · \`${escape(shortTitle(f.issue.title))}\` · ${plural(f.newEvents, "evento", "eventos")}`;
+  if (fixVersion && fixMethod === "date") {
+    return `${head}\nSe esperaba el ${prRef(pr)} en ${escape(fixVersion)}, pero puede que esa versión no lo traiga o que no la haya resuelto: vuelve a quedar abierta.`;
+  }
   if (fixVersion) return `${head}\nYa salió el ${prRef(pr)} en ${escape(fixVersion)} y no la resolvió: vuelve a quedar abierta.`;
   return `${head}\nSe había dado por resuelta el ${day(resolvedAt)}: vuelve a quedar abierta.`;
 }

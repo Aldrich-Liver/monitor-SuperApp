@@ -134,11 +134,17 @@ test("a resolved bug that comes back reopens in the same thread and forgets its 
 test("events after the fixed release reopen the bug", () => {
   const bug = openBug()["app:a"];
   syncPrs(bug, [pr(7, "merged", { mergeCommit: "abc" })], 48);
-  markReleased(bug, { version: "1.5.6 (291)", included: true, method: "date" }, at(5), 48);
+  const dated = structuredClone(bug);
+  markReleased(bug, { version: "1.5.6 (291)", included: true, method: "commit" }, at(5), 48);
   const back = trackFailures({ "app:a": bug }, [failure("a", 1, "1.5.6 (291)")], at(6));
   assert.deepEqual(back.reopened, ["app:a"]);
   assert.match(back.outbox[0].text, /Ya salió el <\S+\|PR #7> en 1\.5\.6 \(291\) y no la resolvió/);
   assert.equal(back.bugs["app:a"].fix, null);
+
+  const [released] = markReleased(dated, { version: "1.5.6 (291)", included: true, method: "date" }, at(5), 48);
+  assert.match(released.text, /\(por fecha: salió después de la fusión/);
+  const unsure = trackFailures({ "app:a": dated }, [failure("a", 1, "1.5.6 (291)")], at(6));
+  assert.match(unsure.outbox[0].text, /Se esperaba el <\S+\|PR #7> en 1\.5\.6 \(291\), pero puede que esa versión no lo traiga/);
 });
 
 test("a build from another copy of the history includes the PR when it has its changes", () => {
