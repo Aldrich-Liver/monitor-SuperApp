@@ -63,12 +63,13 @@ export function trackFailures(bugs, failures, now) {
   const reopened = [];
   for (const f of failures) {
     const bug = next[f.key];
-    if (!bug || !bug.thread_ts) {
+    if (!bug) {
       next[f.key] = newBug(f, now);
       opened.push(f.key);
       continue;
     }
     count(bug, f, now);
+    if (!bug.thread_ts) continue;
     if (bug.status === "resolved") {
       outbox.push(notice(bug, bugReopenedText(bug, f, { resolvedAt: bug.resolvedAt }), true));
       bug.ignoredPrs = [...new Set([...bug.ignoredPrs, ...bug.prs.map(prKey)])];

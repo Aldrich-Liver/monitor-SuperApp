@@ -43,20 +43,27 @@ export function slackClient({ token, channel } = {}) {
       } while (cursor);
       return messages;
     },
-    /** Needs `groups:history` (private channel) or `channels:history` (public). */
-    async findMessage(needle, oldestIso) {
-      const params = new URLSearchParams({ channel, limit: "50" });
-      if (oldestIso) params.set("oldest", String(new Date(oldestIso).getTime() / 1000));
-      const res = await fetch(`https://slack.com/api/conversations.history?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const body = await res.json();
-      if (!body.ok) throw new Error(`Slack conversations.history: ${body.error}`);
-      const found = body.messages.find((m) => JSON.stringify(m).includes(needle));
-      return found ? { ts: found.ts, channel } : null;
+    /**
+     * Top-level messages carrying `Ref. <ref>`, as a map from ref to message ts. Needs
+     * `groups:history` (private channel) or `channels:history` (public).
+     */
+    async findRefs(refs, oldest) {
+      const found = new Map();
+      if (!refs.length) return found;
+      for (const m of await this.history(oldest, { pages: 2 })) {
+        if (m.thread_ts && m.thread_ts !== m.ts) continue;
+        const raw = JSON.stringify(m);
+        for (const ref of refs) if (!found.has(ref) && raw.includes(`Ref. ${ref}`)) found.set(ref, m.ts);
+      }
+      return found;
     },
-    /** `broadcast` also shows a thread reply in the channel ("Also send to channel"), without a new message. */
-    async post(text, threadTs, { broadcast = false } = {}) {
+    /**
+     * Bots only reply in threads: every conversation in the channel is started by Cursor.
+     * `topLevel` is for local tests outside an automation, where Cursor can't post.
+     * `broadcast` also shows a thread reply in the channel ("Also send to channel"), without a new message.
+     */
+    async post(text, threadTs, { broadcast = false, topLevel = false } = {}) {
+      if (!threadTs && !topLevel) throw new Error("los bots solo responden en hilos; los mensajes nuevos los publica Cursor");
       const res = await fetch("https://slack.com/api/chat.postMessage", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json; charset=utf-8" },

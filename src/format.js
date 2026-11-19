@@ -121,30 +121,44 @@ export function bugReopenedText(bug, f, { resolvedAt, pr, fixVersion, fixMethod 
   return `${head}\nSe había dado por resuelta el ${day(resolvedAt)}: vuelve a quedar abierta.`;
 }
 
-function digestStatus(b, { permalink }) {
-  const thread = permalink ? ` · <${permalink}|Ver hilo>` : "";
-  if (b.status === "open") return `sin PR${thread}`;
+const DIGEST_MAX = 15;
+
+function digestStatus(b, esc) {
+  if (b.status === "open") return "sin PR";
   const pr = b.fix ? b.prs.find((p) => p.number === b.fix.pr) : b.prs.find((p) => p.state !== "closed");
-  if (b.fix) return `${prRef(pr)} en ${escape(b.fix.version)}, en observación${thread}`;
-  const state = pr?.state === "merged" ? "fusionado, espera versión" : "en revisión";
-  return `en corrección con el ${prRef(pr)} (${state})${thread}`;
+  const name = pr ? `PR #${pr.number}` : "el PR";
+  if (b.fix) return `${name} en ${esc(b.fix.version)}, en observación`;
+  return `en corrección con el ${name} (${pr?.state === "merged" ? "fusionado, espera versión" : "en revisión"})`;
 }
 
-/** The morning reminder of open bugs. `permalinks` maps a bug key to the link of its thread. */
-export function digestText(bugs, { now, quietHours, permalinks = {} }) {
+/**
+ * The morning reminder of open bugs, posted by Cursor, so it carries no links: each bug is named
+ * by the Ref. of its report, and the monitor bot answers in its thread with the thread links.
+ */
+export function digestText(bugs, { now, quietHours, ref, esc = escape }) {
   const open = bugs.filter((b) => b.status === "open").length;
   const lines = [
     `:clipboard: *Fallas abiertas de Crashlytics* · ${bugs.length} al ${day(now)} · ${open} sin PR, ${bugs.length - open} en corrección`,
   ];
-  for (const b of bugs.slice(0, 15)) {
+  for (const b of bugs.slice(0, DIGEST_MAX)) {
     lines.push(
-      `• *${escape(b.app)} ${escape(b.lastVersion)}* · ${errorLabel(b.issue)} · \`${escape(shortTitle(b.issue.title))}\` · ` +
-        `${plural(b.sinceDigest, "evento", "eventos")} en 24 h · desde el ${day(b.openedAt)} · ${digestStatus(b, { permalink: permalinks[b.key] })}`
+      `• *${esc(b.app)} ${esc(b.lastVersion)}* · ${errorLabel(b.issue)} · \`${esc(shortTitle(b.issue.title))}\` · ` +
+        `${plural(b.sinceDigest, "evento", "eventos")} en 24 h · desde el ${day(b.openedAt)} · ${digestStatus(b, esc)}${b.ref ? ` · ${b.ref}` : ""}`
     );
   }
-  if (bugs.length > 15) lines.push(`_y ${plural(bugs.length - 15, "falla más", "fallas más")}_`);
+  if (bugs.length > DIGEST_MAX) lines.push(`_y ${plural(bugs.length - DIGEST_MAX, "falla más", "fallas más")}_`);
   lines.push(`_Para tomar una, pega el PR en su hilo y pide la revisión a @Cursor. Se dan por resueltas tras ${quietHours} h sin eventos._`);
+  lines.push(`:thread: Enlaces a cada hilo en este hilo.${ref ? ` · Ref. ${ref}` : ""}`);
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
+}
+
+/** The monitor bot's reply under the summary. `permalinks` maps a bug key to the link of its thread. */
+export function digestLinksText(bugs, permalinks) {
+  const lines = bugs
+    .slice(0, DIGEST_MAX)
+    .filter((b) => permalinks[b.key])
+    .map((b) => `• <${permalinks[b.key]}|${escape(b.ref ?? shortTitle(b.issue.title))}> · ${escape(b.app)} · \`${escape(shortTitle(b.issue.title))}\``);
+  return lines.length ? truncate([":link: *Hilos de las fallas abiertas*", ...lines].join("\n"), MESSAGE_LIMIT) : null;
 }
 
 export function analystUnavailableText(reason) {

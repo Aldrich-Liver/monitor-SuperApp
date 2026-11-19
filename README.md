@@ -4,7 +4,7 @@ Revisa cada hora la última versión de Super App y Contacto Logístico (Android
 
 Funciona con tres automatizaciones de Cursor en el environment **Super App**:
 
-1. **Monitor Crashlytics**, programada cada hora. `npm run check` lee Crashlytics, `npm run bugs` lleva el seguimiento de cada falla y `npm run render` escribe un mensaje por cada falla nueva, que Cursor publica con la herramienta Send to Slack. Luego `npm run notify` encuentra cada mensaje por su `Ref. CR-…`, abre su hilo, arroba al Analista y lo activa por webhook, publica los avisos de seguimiento y, cada mañana, el resumen de las fallas abiertas.
+1. **Monitor Crashlytics**, programada cada hora. `npm run check` lee Crashlytics, `npm run bugs` lleva el seguimiento de cada falla y `npm run render` escribe un mensaje por cada falla nueva y, cada mañana, el resumen de las fallas abiertas, que Cursor publica con la herramienta Send to Slack. Luego `npm run notify` encuentra cada mensaje por su `Ref. CR-…`, abre su hilo, arroba al Analista y lo activa por webhook, publica los avisos de seguimiento y responde bajo el resumen con los enlaces a cada hilo.
 2. **Analista Crashlytics**, activada por webhook. Ejecuta `npm run details`, lee el código del commit con el que se compiló la versión y escribe la causa y la solución propuesta en palabras simples. Con `npm run reply` responde en el hilo de cada falla.
 3. **Revisor de PRs**, activada por webhook. Revisa cualquier PR de las apps (corrección de una falla, función nueva, mejora, versión…) con los lineamientos, skills y documentos del equipo que viven en el repo, da el visto bueno o pide solo los cambios necesarios, comenta en el PR de GitHub y responde en el hilo.
 
@@ -37,7 +37,7 @@ Funciona con tres automatizaciones de Cursor en el environment **Super App**:
 
 ## Un hilo por falla
 
-Cada issue de Crashlytics es una falla con su propio hilo, y todo lo que pasa con ella va ahí. El canal principal solo recibe el mensaje que abre cada falla, el resumen de la mañana y, como respuestas del hilo que también se muestran en el canal (sin mensaje nuevo), los avisos de *Resuelto* y *Volvió a aparecer*.
+Cada issue de Crashlytics es una falla con su propio hilo, y todo lo que pasa con ella va ahí. Todo mensaje nuevo del canal lo publica Cursor: el que abre cada falla, el resumen de la mañana y los avisos de versión o de error. Los bots del monitor, el Analista y el Revisor solo responden en hilos; en el canal principal solo se ven, como respuestas del hilo que también se muestran en el canal (sin mensaje nuevo), los avisos de *Resuelto* y *Volvió a aparecer*.
 
 | Estado | Cuándo |
 |---|---|
@@ -47,7 +47,7 @@ Cada issue de Crashlytics es una falla con su propio hilo, y todo lo que pasa co
 | Resuelta | 48 h sin eventos (`resolveAfterHours`), contadas desde la versión con la corrección si la hay. Puede resolverse sin PR si deja de ocurrir sola. |
 | Reabierta | Tuvo eventos después de resuelta, o en la versión que traía la corrección. Vuelve al mismo hilo y se le pide otra vez el detalle al Analista. |
 
-**Resumen de la mañana:** la primera revisión desde las 9:00 hora CDMX (`digestHour`) publica en el canal la lista de fallas abiertas y en corrección, con sus eventos del último día y el enlace a cada hilo. Si no hay fallas abiertas no publica nada. Las fallas resueltas se olvidan después de 30 días; si vuelven, abren un hilo nuevo.
+**Resumen de la mañana:** la primera revisión desde las 9:00 hora CDMX (`digestHour`) prepara la lista de fallas abiertas y en corrección, con sus eventos del último día y la referencia `CR-…` de cada una; Cursor la publica y el bot del monitor responde debajo con el enlace a cada hilo. Si no hay fallas abiertas no publica nada. Las fallas resueltas se olvidan después de 30 días; si vuelven, abren un hilo nuevo.
 
 ## Revisor de PRs
 
@@ -146,7 +146,7 @@ npm test
 
 ### 1. Bot de Slack
 
-El mensaje de cada falla nueva lo publica Cursor, pero la herramienta Send to Slack no devuelve el identificador del mensaje y por eso no puede responder en su hilo. El bot del monitor busca cada mensaje en el canal por su `Ref. CR-…`, abre su hilo y publica ahí todo el seguimiento; si no lo encuentra, publica él mismo el mensaje de la falla.
+El mensaje de cada falla nueva lo publica Cursor, pero la herramienta Send to Slack no devuelve el identificador del mensaje y por eso no puede responder en su hilo. El bot del monitor busca cada mensaje en el canal por su `Ref. CR-…`, abre su hilo y publica ahí todo el seguimiento. Si no lo encuentra, no publica nada en el canal: la siguiente revisión le vuelve a pasar el mensaje a Cursor con la misma referencia.
 
 1. En [api.slack.com/apps](https://api.slack.com/apps), elige **Create New App > From a manifest**, selecciona el workspace y pega [`slack/monitor-manifest.json`](slack/monitor-manifest.json). Ya trae el nombre y los permisos: `chat:write` para escribir y `groups:history`/`channels:history` para encontrar el reporte.
 2. Revisa el resumen y haz clic en **Create**.

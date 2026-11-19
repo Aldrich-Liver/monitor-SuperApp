@@ -3,10 +3,10 @@ const ERROR_REPEAT_MS = 6 * 60 * 60 * 1000;
 const MAX_WINDOW_DAYS = 85;
 
 export function emptyState() {
-  return { v: 2, apps: {}, lastError: null, lastCheckedAt: null, bugs: {}, outbox: [], digestOn: null };
+  return { v: 2, apps: {}, lastError: null, lastCheckedAt: null, bugs: {}, outbox: [], digestOn: null, digest: null };
 }
 
-/** `bugs`, `outbox` and `digestOn` came after v2 started; a v2 state without them is still valid. */
+/** `bugs`, `outbox`, `digestOn` and `digest` came after v2 started; a v2 state without them is still valid. */
 export function normalizeState(raw) {
   if (!raw || typeof raw !== "object" || raw.v !== 2 || typeof raw.apps !== "object") return emptyState();
   return {
@@ -17,6 +17,7 @@ export function normalizeState(raw) {
     bugs: raw.bugs && typeof raw.bugs === "object" ? raw.bugs : {},
     outbox: Array.isArray(raw.outbox) ? raw.outbox : [],
     digestOn: raw.digestOn ?? null,
+    digest: raw.digest ?? null,
   };
 }
 

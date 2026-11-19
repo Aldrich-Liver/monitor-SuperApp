@@ -1,16 +1,14 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
-import { digestBugs, digestDue } from "./bugs.js";
 import { normalizeState } from "./detect.js";
 import { readJson, writeJson } from "./files.js";
-import { analystUnavailableText, bugReportText, digestText, handoffText } from "./format.js";
+import { analystUnavailableText, digestLinksText, handoffText } from "./format.js";
 import { botMention, slackClient, triggerWebhook } from "./slack.js";
 
 const { values: args } = parseArgs({
   options: {
     result: { type: "string", default: ".monitor/result.json" },
     state: { type: "string", default: ".monitor/state.next.json" },
-    thread: { type: "string", default: ".monitor/thread.json" },
     config: { type: "string", default: "config/apps.json" },
     wait: { type: "string", default: "90" },
     "dry-run": { type: "boolean", default: false },
@@ -20,8 +18,6 @@ const { values: args } = parseArgs({
 const result = readJson(args.result);
 const config = readJson(args.config);
 const state = normalizeState(readJson(args.state, null));
-const thread = readJson(args.thread, { reports: [] });
-const quietHours = config.resolveAfterHours ?? 48;
 const failures = new Map(result.findings.filter((f) => f.type === "failure").map((f) => [f.key, f]));
 const now = new Date();
 
@@ -43,21 +39,26 @@ async function post(text, threadTs, { broadcast = false } = {}) {
   return slack.post(text, threadTs, { broadcast });
 }
 
-/** The reports Cursor posted, found by their Ref.; Slack may take a few seconds to list them. */
-async function findReports(refs) {
+/**
+ * The messages Cursor posted, found by their Ref.; Slack may take a few seconds to list them. Bots
+ * never post a message of their own in the channel: what isn't found is sent again by the next
+ * check's render, with the same Ref.
+ */
+async function findPosted(items) {
   const found = new Map();
-  if (dryRun || !refs.length) return found;
-  const oldest = (new Date(thread.renderedAt ?? now).getTime() - 5 * 60 * 1000) / 1000;
+  if (!items.length) return found;
+  if (dryRun) {
+    for (const item of items) found.set(item.ref, `DRY_RUN_${++dryTs}`);
+    return found;
+  }
+  const oldest = (Math.min(...items.map((i) => Date.parse(i.renderedAt ?? now))) - 5 * 60 * 1000) / 1000;
+  const refs = items.map((i) => i.ref);
   const deadline = Date.now() + Number(args.wait) * 1000;
   for (;;) {
     try {
-      for (const m of await slack.history(oldest, { pages: 2 })) {
-        if (m.thread_ts && m.thread_ts !== m.ts) continue;
-        const raw = JSON.stringify(m);
-        for (const ref of refs) if (!found.has(ref) && raw.includes(`Ref. ${ref}`)) found.set(ref, m.ts);
-      }
+      for (const [ref, ts] of await slack.findRefs(refs.filter((r) => !found.has(r)), oldest)) found.set(ref, ts);
     } catch (err) {
-      console.error(`No se pudo buscar los reportes de Cursor: ${err.message}`);
+      console.error(`No se pudo buscar los mensajes de Cursor: ${err.message}`);
       return found;
     }
     if (found.size === refs.length || Date.now() >= deadline) return found;
@@ -65,24 +66,22 @@ async function findReports(refs) {
   }
 }
 
-// 1. Each new bug gets its thread on the report Cursor posted, or on one the bot posts if it isn't found.
+// 1. Each new bug gets its thread on the report Cursor posted, and the morning summary its links.
 const fresh = Object.values(state.bugs).filter((b) => b.status === "new" && b.ref);
-const reports = await findReports(fresh.map((b) => b.ref));
+const digest = state.digest && !state.digest.ts ? state.digest : null;
+const posted = await findPosted([...fresh.filter((b) => !b.reportTs), ...(digest ? [digest] : [])]);
+let opened = 0;
 for (const bug of fresh) {
-  let ts = reports.get(bug.ref);
-  if (ts) console.log(`Reporte de Cursor encontrado: Ref. ${bug.ref}.`);
-  else {
-    if (!dryRun) console.error(`No se encontró el reporte de Cursor con Ref. ${bug.ref}; lo publica el bot.`);
-    const f = failures.get(bug.key) ?? { ...bug, version: bug.lastVersion, newEvents: bug.events, impactedUsers: bug.users };
-    try {
-      ts = (await post(bugReportText(f, { ref: bug.ref, test: Boolean(bug.test), testLabel: result.testLabel !== false }))).ts;
-    } catch (err) {
-      console.error(`No se pudo abrir el hilo de ${bug.key}: ${err.message}`);
-      continue;
-    }
+  const ts = bug.reportTs ?? posted.get(bug.ref);
+  if (!ts) {
+    console.error(`No se encontró el mensaje de Cursor con Ref. ${bug.ref}; la siguiente revisión lo vuelve a enviar.`);
+    continue;
   }
   Object.assign(bug, { status: "open", thread_ts: ts, threadOpenedAt: now.toISOString() });
+  delete bug.reportTs;
+  opened++;
 }
+if (digest && posted.has(digest.ref)) digest.ts = posted.get(digest.ref);
 save();
 
 // 2. Lifecycle notices; one that fails stays in the outbox for the next check.
@@ -155,34 +154,26 @@ if (toAnalyze.length) {
   save();
 }
 
-// 4. Morning reminder of the bugs still open; tests never send it.
-const digestDay = result.test ? null : digestDue(now, state.digestOn, config.digestHour ?? 9);
+// 4. Once Cursor posted the morning summary, the bot answers under it with the link to each thread.
 let digestSent = false;
-if (digestDay) {
-  const open = digestBugs(state.bugs);
-  let posted = !open.length;
-  if (open.length) {
-    const permalinks = {};
-    if (!dryRun) {
-      for (const bug of open.slice(0, 15)) {
-        permalinks[bug.key] = await slack.permalink(bug.thread_ts).catch(() => null);
-      }
-    }
-    try {
-      await post(digestText(open, { now, quietHours, permalinks }));
-      posted = digestSent = true;
-    } catch (err) {
-      console.error(`No se pudo publicar el resumen de la mañana: ${err.message}`);
-    }
+if (state.digest?.ts) {
+  const listed = (state.digest.keys ?? []).map((key) => state.bugs[key]).filter((b) => b?.thread_ts);
+  const permalinks = {};
+  for (const bug of listed.slice(0, 15)) {
+    permalinks[bug.key] = dryRun ? `https://slack.example/${bug.thread_ts}` : await slack.permalink(bug.thread_ts).catch(() => null);
   }
-  if (posted) {
-    state.digestOn = digestDay;
-    for (const bug of Object.values(state.bugs)) bug.sinceDigest = 0;
+  const links = digestLinksText(listed, permalinks);
+  if (links) {
+    await post(links, state.digest.ts).catch((err) => console.error(`No se pudo responder con los enlaces del resumen: ${err.message}`));
   }
+  state.digestOn = state.digest.day;
+  state.digest = null;
+  for (const bug of Object.values(state.bugs)) bug.sinceDigest = 0;
+  digestSent = true;
   save();
 }
 
 console.log(
-  `Hilos nuevos: ${fresh.filter((b) => b.thread_ts).length}/${fresh.length} · al Analista: ${toAnalyze.length} · ` +
-    `avisos: ${sent} enviados, ${pending.length} pendientes · resumen: ${digestSent ? "enviado" : "no"}.`
+  `Hilos nuevos: ${opened}/${fresh.length} · al Analista: ${toAnalyze.length} · ` +
+    `avisos: ${sent} enviados, ${pending.length} pendientes · resumen: ${digestSent ? "publicado por Cursor" : state.digest ? "no encontrado, se reenvía" : "no"}.`
 );
