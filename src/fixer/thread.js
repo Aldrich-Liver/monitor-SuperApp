@@ -101,3 +101,21 @@ export function fixInProgress(messages, now = Date.now()) {
 export function fixRequester(messages) {
   return [...messages].reverse().find((m) => m.user && !m.bot_id && /corrig|arregl/i.test(m.text ?? ""))?.user ?? null;
 }
+
+const NO_CHANGE = /^:information_source: \*Sin cambios de código\*/;
+
+/**
+ * The Corrector's latest conclusion in the thread when it is that the bug needs no code change, as
+ * `{ ts, at, summary }`; null when its latest result is a fix, an error, or there is none.
+ */
+export function noChangeVerdict(messages) {
+  let found = null;
+  for (const m of messages) {
+    const text = m.text ?? "";
+    if (!m.bot_id || !FIX_DONE.test(text)) continue;
+    found = NO_CHANGE.test(text)
+      ? { ts: m.ts, at: new Date(Number(m.ts) * 1000).toISOString(), summary: text.split("\n")[1] ?? "" }
+      : null;
+  }
+  return found;
+}

@@ -1,4 +1,4 @@
-import { bugFixingText, bugMergedText, bugPrClosedText, bugReleasedText, bugReopenedText, bugResolvedText } from "./format.js";
+import { bugFixingText, bugWatchingText, bugMergedText, bugPrClosedText, bugReleasedText, bugReopenedText, bugResolvedText } from "./format.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 const PRUNE_DAYS = 30;
@@ -9,9 +9,11 @@ const TZ = "America/Mexico_City";
  * - `new`: seen for the first time; its report still has to be posted.
  * - `open`: reported, nobody has linked a PR in its thread.
  * - `fixing`: a PR of the app's repo was linked in the thread.
+ * - `watching`: the Corrector concluded it needs no code change; it is still watched, and it
+ *   reopens if it shows up in another version.
  * - `resolved`: no events for `quietHours`; it reopens in the same thread if it comes back.
  */
-export const ACTIVE = new Set(["open", "fixing"]);
+export const ACTIVE = new Set(["open", "fixing", "watching"]);
 
 export const prKey = (pr) => `${pr.repo}#${pr.number}`.toLowerCase();
 
@@ -75,6 +77,10 @@ export function trackFailures(bugs, failures, now) {
       bug.ignoredPrs = [...new Set([...bug.ignoredPrs, ...bug.prs.map(prKey)])];
       Object.assign(bug, { status: "open", prs: [], fix: null, resolvedAt: null, sinceDigest: f.newEvents });
       reopened.push(f.key);
+    } else if (bug.status === "watching" && f.version !== bug.review?.version) {
+      outbox.push(notice(bug, bugReopenedText(bug, f, { reviewedVersion: bug.review?.version }), true));
+      Object.assign(bug, { status: "open", review: null });
+      reopened.push(f.key);
     } else if (bug.fix) {
       const pr = bug.prs.find((p) => p.number === bug.fix.pr) ?? null;
       outbox.push(notice(bug, bugReopenedText(bug, f, { pr, fixVersion: bug.fix.version, fixMethod: bug.fix.method }), true));
@@ -101,7 +107,7 @@ export function syncPrs(bug, prs, quietHours) {
       return { ...prev, ...p, state: p.state ?? prev.state ?? null };
     });
   const active = bug.prs.filter((p) => p.state !== "closed");
-  if (bug.status === "open" && active.length) {
+  if ((bug.status === "open" || bug.status === "watching") && active.length) {
     bug.status = "fixing";
     const pr = active.find((p) => p.state === "merged") ?? active[0];
     if (pr.state === "merged") pr.mergedNotified = true;
@@ -117,6 +123,18 @@ export function syncPrs(bug, prs, quietHours) {
     }
   }
   return out;
+}
+
+/**
+ * An open bug the Corrector concluded needs no code change goes to `watching`. A conclusion from
+ * before the bug was last reopened doesn't count.
+ */
+export function markReviewed(bug, verdict, quietHours) {
+  if (bug.status !== "open" || !verdict) return [];
+  if (bug.reopenedAt && Date.parse(verdict.at) <= Date.parse(bug.reopenedAt)) return [];
+  if (bug.reviewedTs === verdict.ts) return [];
+  Object.assign(bug, { status: "watching", reviewedTs: verdict.ts, review: { at: verdict.at, version: bug.lastVersion } });
+  return [notice(bug, bugWatchingText(bug, quietHours))];
 }
 
 /** The merged PR of a bug in correction, the one a release has to include. */
@@ -164,9 +182,11 @@ export function digestDue(now, digestOn, hour) {
   return current >= hour && digestOn !== day ? day : null;
 }
 
-/** Open bugs for the morning summary: the ones nobody took first, then those in correction; most events first. */
+const DIGEST_ORDER = { open: 0, fixing: 1, watching: 2 };
+
+/** Open bugs for the morning summary: the ones nobody took first, then in correction, then in review; most events first. */
 export function digestBugs(bugs) {
   return Object.values(bugs)
     .filter((b) => ACTIVE.has(b.status) && b.thread_ts)
-    .sort((a, b) => (a.status === b.status ? b.sinceDigest - a.sinceDigest || b.events - a.events : a.status === "open" ? -1 : 1));
+    .sort((a, b) => DIGEST_ORDER[a.status] - DIGEST_ORDER[b.status] || b.sinceDigest - a.sinceDigest || b.events - a.events);
 }

@@ -92,6 +92,10 @@ export function bugFixingText(pr, quietHours) {
   return `:hammer_and_wrench: *En corrección* con el ${prRef(pr)}.${merged} Aviso aquí cuando salga en una versión; tras ${quietHours} h sin eventos la doy por resuelta.`;
 }
 
+export function bugWatchingText(bug, quietHours) {
+  return `:eye: *En revisión* · El Corrector no encontró un cambio de código que la corrija. La sigo vigilando: si no tiene eventos en ${quietHours} h la doy por resuelta, y si aparece en una versión distinta de ${escape(bug.lastVersion)} vuelve a quedar abierta.`;
+}
+
 export function bugMergedText(pr) {
   return `:twisted_rightwards_arrows: El ${prRef(pr)} ya está fusionado. Aviso aquí cuando salga en una versión.`;
 }
@@ -112,11 +116,12 @@ export function bugResolvedText(bug, { pr, version, released, quietHours }) {
   return `${head}\n${quietHours} h sin eventos en ${escape(version)}.${note}`;
 }
 
-export function bugReopenedText(bug, f, { resolvedAt, pr, fixVersion, fixMethod } = {}) {
+export function bugReopenedText(bug, f, { resolvedAt, pr, fixVersion, fixMethod, reviewedVersion } = {}) {
   const head = `:warning: *Volvió a aparecer* · ${escape(f.app)} ${escape(f.version)} · \`${escape(shortTitle(f.issue.title))}\` · ${plural(f.newEvents, "evento", "eventos")}`;
   if (fixVersion && fixMethod === "date") {
     return `${head}\nSe esperaba el ${prRef(pr)} en ${escape(fixVersion)}, pero puede que esa versión no lo traiga o que no la haya resuelto: vuelve a quedar abierta.`;
   }
+  if (reviewedVersion) return `${head}\nEl Corrector la había revisado en ${escape(reviewedVersion)} sin encontrar un cambio de código; ahora aparece en otra versión: vuelve a quedar abierta.`;
   if (fixVersion) return `${head}\nYa salió el ${prRef(pr)} en ${escape(fixVersion)} y no la resolvió: vuelve a quedar abierta.`;
   return `${head}\nSe había dado por resuelta el ${day(resolvedAt)}: vuelve a quedar abierta.`;
 }
@@ -125,6 +130,7 @@ const DIGEST_MAX = 15;
 
 function digestStatus(b, esc) {
   if (b.status === "open") return "sin PR";
+  if (b.status === "watching") return "en revisión: el Corrector no encontró cambio de código";
   const pr = b.fix ? b.prs.find((p) => p.number === b.fix.pr) : b.prs.find((p) => p.state !== "closed");
   const name = pr ? `PR #${pr.number}` : "el PR";
   if (b.fix) return `${name} en ${esc(b.fix.version)}, en observación`;
@@ -136,9 +142,11 @@ function digestStatus(b, esc) {
  * by the Ref. of its report, and the monitor bot answers in its thread with the thread links.
  */
 export function digestText(bugs, { now, quietHours, ref, esc = escape }) {
-  const open = bugs.filter((b) => b.status === "open").length;
+  const count = (status) => bugs.filter((b) => b.status === status).length;
+  const watching = count("watching");
   const lines = [
-    `:clipboard: *Fallas abiertas de Crashlytics* · ${bugs.length} al ${day(now)} · ${open} sin PR, ${bugs.length - open} en corrección`,
+    `:clipboard: *Fallas abiertas de Crashlytics* · ${bugs.length} al ${day(now)} · ${count("open")} sin PR, ${count("fixing")} en corrección` +
+      (watching ? `, ${watching} en revisión` : ""),
   ];
   for (const b of bugs.slice(0, DIGEST_MAX)) {
     lines.push(
