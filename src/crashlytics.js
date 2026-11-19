@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { getAccessToken } from "./auth.js";
 
 const ORIGIN = process.env.FIREBASE_CRASHLYTICS_URL ?? "https://firebasecrashlytics.googleapis.com";
@@ -18,15 +19,24 @@ function intervalParams(daysOrSince) {
   return { "filter.interval.start_time": start.toISOString(), "filter.interval.end_time": end.toISOString() };
 }
 
+// With FIREBASE_TOKEN the per-minute read quota is the Firebase CLI's shared one, not the app project's.
+const QUOTA_RETRIES_S = [20, 40];
+
 async function get(url, params) {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     for (const item of [].concat(v)) qs.append(k, item);
   }
-  const res = await fetch(`${url}?${qs}`, {
-    headers: { Authorization: `Bearer ${await getAccessToken()}` },
-    signal: AbortSignal.timeout(20000),
-  });
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(`${url}?${qs}`, {
+      headers: { Authorization: `Bearer ${await getAccessToken()}` },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (res.status !== 429 || attempt >= QUOTA_RETRIES_S.length) break;
+    await res.body?.cancel();
+    await sleep(QUOTA_RETRIES_S[attempt] * 1000);
+  }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = body.error?.message ?? res.statusText;
