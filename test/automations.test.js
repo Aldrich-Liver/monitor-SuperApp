@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { crashlyticsLink, failureFromThread, fixInProgress, fixRequester, linkedFixPrs, threadTarget } from "../src/fixer/thread.js";
 import { parsePr } from "../src/reviewer/pr.js";
-import { pendingBotMentions, reviewVerdict } from "../src/reviewer/thread.js";
+import { FIX_ASK, REVIEW_ASK, pendingBotMentions, pendingMentions, reviewVerdict } from "../src/reviewer/thread.js";
 import { fixResultText, prOpenedText, testsComment, testsText, twinOpenedText } from "../src/format.js";
 import { testsVerdict } from "../src/tester/thread.js";
 import { compileErrors, lintVerdict, parseJunit, parseLint, testStatus } from "../src/tester/results.js";
@@ -237,4 +237,44 @@ test("reads the result Pruebas de PRs posted for the PR's latest commit", () => 
   assert.equal(testsVerdict([report, failed, review], pr, "bbbbbbb222"), null);
   assert.deepEqual(testsVerdict([report, failed, passed, review], pr, "bbbbbbb222"), { status: "passed", ts: "3", text: passed.text });
   assert.equal(testsVerdict([report, passed], parsePr("https://github.com/Aldrich-Liver/sw-crp-super-app-android/pull/15"), "bbbbbbb222"), null);
+});
+
+test("picks up '@Cursor corrige esta falla' that reached an automation instead of the Corrector", async () => {
+  const NOW = 1_800_000_000_000;
+  const at = (minutesAgo) => String(NOW / 1000 - minutesAgo * 60);
+  const fixer = { userId: "UFIX", botId: "BFIX" };
+  const bug = { ts: at(300), bot_id: "BCURSOR", text: report.text, reply_count: 3, latest_reply: at(1) };
+  const answeredBug = { ts: at(500), bot_id: "BCURSOR", text: report.text, reply_count: 3, latest_reply: at(50) };
+  const threads = {
+    [bug.ts]: [
+      bug,
+      { ts: at(299), bot_id: "BMON", user: "UMON", text: ":mag: <@UANA>, revisa y corrige esta falla" },
+      { ts: at(10), user: "UDEV", text: "<@UCURSOR> corrige esta falla" },
+      { ts: at(1), user: "UDEV", text: "<@UCURSOR> corrige esta falla" },
+    ],
+    [answeredBug.ts]: [
+      answeredBug,
+      { ts: at(60), user: "UDEV", text: "<@UCURSOR> arregla esto" },
+      { ts: at(50), bot_id: "BFIX", user: "UFIX", text: ":wrench: El *Corrector* toma esta falla…" },
+    ],
+  };
+  const slack = { channel: "C1", history: async () => [bug, answeredBug], replies: async (ts) => threads[ts] };
+  const pending = await pendingBotMentions(slack, fixer, { now: NOW, asks: FIX_ASK, minAgeMin: 5 });
+  assert.deepEqual(pending.map((p) => [p.thread_ts, p.request.ts, p.via]), [[bug.ts, at(10), "ask"]]);
+  assert.equal((await pendingBotMentions(slack, fixer, { now: NOW })).length, 0);
+  assert.ok(!FIX_ASK.test("corrige esta falla"));
+});
+
+test("picks up '@Cursor revisa este PR' with a link that the Revisor hasn't answered", async () => {
+  const NOW = 1_800_000_000_000;
+  const at = (minutesAgo) => String(NOW / 1000 - minutesAgo * 60);
+  const reviewer = { userId: "UREV", botId: "BREV" };
+  const top = { ts: at(100), bot_id: "BCURSOR", text: `:arrow_heading_up: PR nuevo ${ANDROID_PR}`, reply_count: 2, latest_reply: at(10) };
+  const threads = {
+    [top.ts]: [top, { ts: at(20), user: "UDEV", text: "<@UCURSOR> revisa otra vez" }, { ts: at(10), user: "UDEV", text: `<@UCURSOR> revisa este PR <${ANDROID_PR}>` }],
+  };
+  const slack = { channel: "C1", history: async () => [top], replies: async (ts) => threads[ts] };
+  const pending = await pendingMentions(slack, reviewer, { now: NOW });
+  assert.deepEqual(pending.map((p) => [p.request.ts, p.prs[0].number]), [[at(10), 14]]);
+  assert.ok(REVIEW_ASK.test("<@U1> ¿lo revisas?"));
 });

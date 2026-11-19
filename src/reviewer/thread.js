@@ -77,28 +77,41 @@ export function answered(messages, request, reviewer) {
 }
 
 /**
- * Messages that mention the reviewer bot next to a PR link and have no reviewer reply after them.
- * The bot does not receive Slack events, so the hourly monitor runs this to pick those mentions up.
+ * Messages that mention the reviewer bot, or ask for a review, next to a PR link and have no reviewer
+ * reply after them. The bot does not receive Slack events, so the monitor runs this to pick them up.
  */
-export async function pendingMentions(slack, reviewer, { hours = 26, now = Date.now() } = {}) {
-  const pending = await pendingBotMentions(slack, reviewer, { hours, now });
+export async function pendingMentions(slack, reviewer, options = {}) {
+  const pending = await pendingBotMentions(slack, reviewer, { asks: REVIEW_ASK, ...options });
   return pending.map((item) => ({ ...item, prs: prUrls(textOf(item.request)) })).filter((item) => item.prs.length);
 }
 
+/** A person mentioning someone (usually @Cursor) and asking for a review or a fix in the same message. */
+export const REVIEW_ASK = /<@[UW][A-Z0-9]+>[\s\S]*\brevis/i;
+export const FIX_ASK = /<@[UW][A-Z0-9]+>[\s\S]*\b(corrige|corregir|corrijan?|arregla|arreglar)\b/i;
+
+const fromPerson = (m) => Boolean(m.user) && !m.bot_id && m.subtype !== "bot_message";
+
 /**
- * Messages that mention a bot and have no reply from it after them, with their thread. The bots
- * don't receive Slack events, so the hourly monitor looks for their mentions.
+ * Messages that mention a bot, or that a person wrote matching `asks`, with no reply from the bot
+ * after them, with their thread. `via` says which of the two it was. A reply to a message the
+ * automations posted with Send to Slack goes back to that automation's run and never reaches the bot,
+ * so the monitor looks for these requests. `minAgeMin` leaves time to the @Cursor agent that may
+ * already be handling a request made outside those threads.
  */
-export async function pendingBotMentions(slack, bot, { hours = 26, now = Date.now() } = {}) {
+export async function pendingBotMentions(slack, bot, { hours = 26, now = Date.now(), asks = null, minAgeMin = 0 } = {}) {
   const oldest = secondsAgo(hours, now);
+  const newest = (now - minAgeMin * 60 * 1000) / 1000;
   const tag = `<@${bot.userId}>`;
   const pending = [];
   for (const parent of await recentThreads(slack, hours, now)) {
     const messages = await threadMessages(slack, parent);
     for (const m of messages) {
-      if (Number(m.ts) < oldest || m.user === bot.userId || !(m.text ?? "").includes(tag)) continue;
-      if (answered(messages, m, bot)) continue;
-      pending.push({ thread_ts: parent.ts, request: m, messages });
+      const ts = Number(m.ts);
+      if (ts < oldest || ts > newest || m.user === bot.userId) continue;
+      const text = m.text ?? "";
+      const via = text.includes(tag) ? "mention" : asks && fromPerson(m) && asks.test(text) ? "ask" : null;
+      if (!via || answered(messages, m, bot)) continue;
+      pending.push({ thread_ts: parent.ts, request: m, messages, via });
     }
   }
   return pending;

@@ -8,6 +8,7 @@ import { pendingMentions } from "./thread.js";
 const { values: args } = parseArgs({
   options: {
     hours: { type: "string", default: "26" },
+    "min-age-min": { type: "string", default: "5" },
     config: { type: "string", default: "config/apps.json" },
     "dry-run": { type: "boolean", default: false },
   },
@@ -27,7 +28,7 @@ if (!reader) {
 const config = readJson(args.config);
 const reviewer = await botIdentity(token);
 const poster = slackClient({ token });
-const pending = await pendingMentions(reader, reviewer, { hours: Number(args.hours) });
+const pending = await pendingMentions(reader, reviewer, { hours: Number(args.hours), minAgeMin: Number(args["min-age-min"]) });
 
 let requested = 0;
 for (const item of pending) {
@@ -45,4 +46,4 @@ for (const item of pending) {
     }
   }
 }
-console.log(`${pending.length} mención(es) pendiente(s) al Revisor; revisiones pedidas: ${requested}.`);
+console.log(`${pending.length} petición(es) pendiente(s) al Revisor; revisiones pedidas: ${requested}.`);
