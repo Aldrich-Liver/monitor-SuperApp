@@ -147,7 +147,9 @@ export function digestText(bugs, { now, quietHours, ref, esc = escape }) {
     );
   }
   if (bugs.length > DIGEST_MAX) lines.push(`_y ${plural(bugs.length - DIGEST_MAX, "falla más", "fallas más")}_`);
-  lines.push(`_Para tomar una, pega el PR en su hilo y pide la revisión a @Cursor. Se dan por resueltas tras ${quietHours} h sin eventos._`);
+  lines.push(
+    `_Para tomar una, pega el PR en su hilo, o escribe ahí \`@Cursor corrige esta falla\` para que el Corrector abra los PR. Se dan por resueltas tras ${quietHours} h sin eventos._`
+  );
   lines.push(`:thread: Enlaces a cada hilo en este hilo.${ref ? ` · Ref. ${ref}` : ""}`);
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }
@@ -181,6 +183,7 @@ export function detailText(d, analysis, index = 1, total = 1) {
   if (analysis?.fix) lines.push(`*Solución propuesta:* ${escape(analysis.fix)}`);
   if (!analysis) lines.push("_Sin análisis disponible para esta falla._");
   if (d.issue.uri) lines.push(`<${d.issue.uri}|Ver en Crashlytics>`);
+  if (d.sourceRepo) lines.push("_Para que el Corrector abra los PR con la solución, escribe en este hilo `@Cursor corrige esta falla`._");
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }
 
@@ -256,5 +259,123 @@ export function reviewText(context, review) {
     if (items.length > MAX_REVIEW_ITEMS) lines.push(`_y ${items.length - MAX_REVIEW_ITEMS} más en el PR._`);
   }
   if (review.githubPosted) lines.push("_La revisión también quedó en el PR de GitHub._");
+  return truncate(lines.join("\n"), MESSAGE_LIMIT);
+}
+
+const MAX_TEST_ITEMS = 5;
+
+function minutes(seconds = 0) {
+  return seconds < 90 ? `${seconds} s` : `${Math.round(seconds / 60)} min`;
+}
+
+function testsHeadline(result) {
+  const t = result.tests;
+  const lint = result.lint;
+  const counts = t ? `${plural(t.total, "prueba", "pruebas")}${t.failed ? `, ${t.failed} fallida${t.failed === 1 ? "" : "s"}` : ""}` : null;
+  const lintPart = lint
+    ? lint.errors
+      ? `lint: ${plural(lint.errors, "error nuevo", "errores nuevos")}`
+      : `lint sin errores nuevos${lint.previousErrors ? ` (${lint.previousErrors} previos en archivos que el PR no toca)` : ""}`
+    : null;
+  return [counts, lintPart, minutes(result.durationS)].filter(Boolean).join(" · ");
+}
+
+const TEST_STATUS = {
+  passed: ":white_check_mark: *Pruebas OK*",
+  failed: ":x: *Pruebas fallidas*",
+  "build-failed": ":x: *No compila*",
+  timeout: ":hourglass: *Pruebas detenidas*",
+  error: ":warning: *No se pudieron correr las pruebas*",
+};
+
+/** Details of what went wrong, as plain items shared by the Slack reply and the GitHub comment. */
+function testProblems(result) {
+  const items = [];
+  for (const f of result.tests?.failures ?? []) items.push({ where: f.test, text: f.message });
+  for (const i of result.lint?.issues ?? []) items.push({ where: `${i.file}${i.line ? `:${i.line}` : ""}`, text: `lint ${i.id}: ${i.message}` });
+  for (const e of result.compileErrors ?? []) items.push({ where: e.file ? `${e.file}${e.line ? `:${e.line}` : ""}` : null, text: e.message });
+  if (result.status === "timeout") items.push({ where: null, text: "Gradle pasó del límite de tiempo sin terminar; revisa si una prueba se queda colgada." });
+  return items;
+}
+
+/** The test run in the PR's Slack thread, posted by the monitor bot. */
+export function testsText(result) {
+  const pr = result.pr;
+  const sha = pr.headSha ? ` · \`${pr.headSha.slice(0, 7)}\`` : "";
+  const lines = [`${TEST_STATUS[result.status] ?? result.status} · ${prLink(pr)} de ${escape(result.app)}${sha} · ${testsHeadline(result)}`];
+  const items = testProblems(result);
+  for (const item of items.slice(0, MAX_TEST_ITEMS)) {
+    lines.push(`• ${item.where ? `\`${escape(item.where)}\` · ` : ""}${escape(item.text)}`);
+  }
+  if (items.length > MAX_TEST_ITEMS) lines.push(`_y ${items.length - MAX_TEST_ITEMS} más en el PR._`);
+  return truncate(lines.join("\n"), MESSAGE_LIMIT);
+}
+
+/** The same run as a Markdown comment for the PR on GitHub. */
+export function testsComment(result) {
+  const pr = result.pr;
+  const label = { passed: "✅ Pruebas OK", failed: "❌ Pruebas fallidas", "build-failed": "❌ No compila", timeout: "⌛ Pruebas detenidas", error: "⚠️ No se pudieron correr las pruebas" };
+  const lines = [
+    `**${label[result.status] ?? result.status}** · \`${(pr.headSha ?? "").slice(0, 7)}\` · ${testsHeadline(result)}`,
+    "",
+    `\`./gradlew ${(result.tasks ?? []).join(" ")}\``,
+  ];
+  const items = testProblems(result);
+  if (items.length) {
+    lines.push("");
+    for (const item of items.slice(0, 15)) lines.push(`- ${item.where ? `\`${item.where}\`: ` : ""}${item.text}`);
+  }
+  lines.push("", "_Corrida automática de Pruebas de PRs. iOS no se compila en la nube._");
+  return lines.join("\n");
+}
+
+const twinLabel = (repo) => (/ios/i.test(repo) ? "iOS" : /android/i.test(repo) ? "Android" : repo);
+
+/**
+ * The message Cursor posts in the channel when a PR is opened; its thread gets the review and the
+ * tests. Plain URLs, because Send to Slack may escape angle brackets.
+ */
+export function prOpenedText({ pr, app, twin, esc = neutralize }) {
+  const lines = [`:arrow_heading_up: *PR nuevo en ${esc(app)}* · #${pr.number}${pr.title ? ` · ${esc(truncate(pr.title, 120))}` : ""}`];
+  lines.push(`${pr.url}${pr.headBranch ? ` · \`${esc(pr.headBranch)}\`` : ""}${pr.author ? ` · de ${esc(pr.author)}` : ""}`);
+  if (twin?.pr) lines.push(`:link: Gemelo en ${twinLabel(twin.repo)}: ${twin.pr.url}`);
+  else if (twin && twin.pr === null) lines.push(`:warning: ${twinMissing(twin, esc)}`);
+  lines.push(":thread: Revisión y pruebas en el hilo.");
+  return truncate(lines.join("\n"), MESSAGE_LIMIT);
+}
+
+function twinMissing(twin, esc) {
+  return `Todavía no hay PR gemelo en ${esc(twin.repo)} con la rama \`${esc(twin.branch ?? "?")}\`. Si el cambio es de una sola plataforma, dilo en la descripción.`;
+}
+
+export function twinOpenedText({ pr, app }) {
+  return `:link: Se abrió el gemelo en ${escape(app)}: ${prLink(pr)}${pr.title ? ` · _${escape(truncate(pr.title, 120))}_` : ""}. Su revisión y sus pruebas también van en este hilo.`;
+}
+
+export function twinMissingText(twin) {
+  return `:warning: ${twinMissing(twin, escape)}`;
+}
+
+export function fixAckText({ requester, failure }) {
+  return `:wrench: ${userMention(requester)}El *Corrector* toma esta falla de ${escape(failure.app)}: busca la causa en el código, la corrige en Android y en iOS y responde aquí con los PR.`;
+}
+
+export function fixerUnavailableText(reason) {
+  return `:warning: No se pudo activar al Corrector: ${escape(reason)}`;
+}
+
+/** The Corrector's answer in the bug's thread. Linking the PRs here is what puts the bug in correction. */
+export function fixResultText(result, prs) {
+  const head = {
+    fixed: ":hammer_and_wrench: *Corrección propuesta*",
+    "no-change": ":information_source: *Sin cambios de código*",
+    error: ":x: *No pude corregir esta falla*",
+  }[result.status] ?? `*${escape(result.status)}*`;
+  const lines = [head];
+  if (result.summary) lines.push(escape(result.summary));
+  for (const pr of prs) lines.push(`• ${prLink(pr)} · ${escape(pr.repo)}`);
+  if (result.tested) lines.push(`*Qué se probó:* ${escape(result.tested)}`);
+  if (result.notTested) lines.push(`*Qué no se probó:* ${escape(result.notTested)}`);
+  if (prs.length) lines.push("_Los PR requieren revisión y merge de una persona._");
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }
