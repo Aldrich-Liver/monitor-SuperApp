@@ -128,7 +128,7 @@ iOS no se prueba: los agentes en la nube corren en Linux y no hay Xcode. El Revi
 
 ## Corrector
 
-**Dónde llega la petición.** Los hilos de las fallas los abre el Monitor con Send to Slack, así que un `@Cursor corrige esta falla` en ese hilo no le llega a un agente nuevo de Cursor: le llega a la corrida del Monitor que publicó el mensaje. Lo mismo pasa con `@Cursor revisa este PR` en un hilo que abrió PR nuevo. Por eso esos prompts no corrigen ni revisan nada: ejecutan `fix:scan` y `review:scan`, que encuentran la petición sin respuesta y activan al Corrector o al Revisor. Si el aviso inmediato falla, el Monitor la encuentra en su siguiente corrida. Arrobar directo a `@Corrector de fallas` o a `@Revisor de PRs` funciona igual.
+**Dónde llega la petición.** Los hilos de las fallas los abre el Monitor con Send to Slack, así que un `@Cursor corrige esta falla` en ese hilo no le llega a un agente nuevo de Cursor: le llega a la corrida del Monitor que publicó el mensaje. Lo mismo pasa con `@Cursor revisa este PR` en un hilo que abrió PR nuevo. Por eso esos prompts no corrigen ni revisan nada: ejecutan `fix:scan` y `review:scan`, que encuentran la petición sin respuesta y activan al Corrector o al Revisor. Si el aviso inmediato falla, el Monitor la encuentra en su siguiente corrida. Arrobar directo a `@Corrector de fallas` o a `@Revisor de PRs` funciona igual. El Corrector nunca toma una falla por su cuenta: solo cuenta un mensaje de una persona que arroba a `@Cursor` (su ID está en `cursorUserId` de `config/apps.json`) o al bot del Corrector. Pedirle a un compañero que arregle algo no lo activa. Para cancelar una petición que todavía no tiene respuesta del Corrector, borra el mensaje.
 
 Se pide en el hilo de la falla, de una de estas formas:
 

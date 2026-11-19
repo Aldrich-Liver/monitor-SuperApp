@@ -28,7 +28,7 @@ if (!reader) {
 const config = readJson(args.config);
 const reviewer = await botIdentity(token);
 const poster = slackClient({ token });
-const pending = await pendingMentions(reader, reviewer, { hours: Number(args.hours), minAgeMin: Number(args["min-age-min"]) });
+const pending = await pendingMentions(reader, reviewer, { hours: Number(args.hours), minAgeMin: Number(args["min-age-min"]), cursorUserId: config.cursorUserId });
 
 let requested = 0;
 for (const item of pending) {
