@@ -16,10 +16,10 @@ export function githubToken() {
   }
 }
 
-/** The PR as GitHub describes it, or null when the API is out of reach; the review then relies on git alone. */
-export async function fetchPr({ owner, repo, number }) {
+/** The parsed body of a GitHub API GET, or null when the API is out of reach or answers with an error. */
+async function api(path) {
   const token = githubToken();
-  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${number}`, {
+  const res = await fetch(`https://api.github.com${path}`, {
     headers: {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
@@ -27,18 +27,41 @@ export async function fetchPr({ owner, repo, number }) {
     },
   }).catch(() => null);
   if (!res?.ok) return null;
-  const p = await res.json();
+  return res.json();
+}
+
+function describe(p) {
   const body = p.body ?? "";
   return {
+    number: p.number,
+    url: p.html_url,
     title: p.title,
     body: body.length > BODY_CHARS ? `${body.slice(0, BODY_CHARS - 1)}…` : body,
     author: p.user?.login ?? null,
-    state: p.merged ? "merged" : p.state,
+    state: p.merged || p.merged_at ? "merged" : p.state,
     draft: Boolean(p.draft),
     base: p.base?.ref ?? null,
     headBranch: p.head?.ref ?? null,
+    headSha: p.head?.sha ?? null,
     headRepo: p.head?.repo?.full_name ?? null,
-    mergeCommit: p.merged ? p.merge_commit_sha ?? null : null,
+    mergeCommit: p.merged || p.merged_at ? p.merge_commit_sha ?? null : null,
     mergedAt: p.merged_at ?? null,
   };
+}
+
+/** The PR as GitHub describes it, or null when the API is out of reach; the review then relies on git alone. */
+export async function fetchPr({ owner, repo, number }) {
+  const p = await api(`/repos/${owner}/${repo}/pulls/${number}`);
+  return p ? describe(p) : null;
+}
+
+/**
+ * The most recent PR of `repo` opened from `branch` in the same owner, open ones first. `undefined`
+ * when GitHub can't be read, so a missing twin is not confused with an unknown one.
+ */
+export async function prForBranch({ owner, repo, branch }) {
+  const list = await api(`/repos/${owner}/${repo}/pulls?${new URLSearchParams({ head: `${owner}:${branch}`, state: "all", per_page: "10" })}`);
+  if (!Array.isArray(list)) return undefined;
+  const prs = list.map(describe).sort((a, b) => (a.state === "open") - (b.state === "open") || a.number - b.number);
+  return prs.at(-1) ?? null;
 }

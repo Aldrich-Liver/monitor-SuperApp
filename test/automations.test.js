@@ -1,0 +1,194 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { crashlyticsLink, failureFromThread, fixInProgress, fixRequester, linkedFixPrs, threadTarget } from "../src/fixer/thread.js";
+import { pendingBotMentions } from "../src/reviewer/thread.js";
+import { fixResultText, prOpenedText, testsComment, testsText, twinOpenedText } from "../src/format.js";
+import { compileErrors, lintVerdict, parseJunit, parseLint, testStatus } from "../src/tester/results.js";
+
+const config = {
+  apps: [
+    { name: "Super App Android", appId: "1:393935496247:android:0eb1222bba3d03d8ee8bb2", bundle: "com.liverpool.superapp1", sourceRepo: "sw-crp-super-app-android" },
+    { name: "Super App iOS", appId: "1:393935496247:ios:4851fc5034ce76a4ee8bb2", bundle: "com.example.superAppV2", sourceRepo: "sw-crp-super-app-ios" },
+    { name: "Contacto Logístico Android", appId: "1:393935496247:android:6cfb996092b513b2ee8bb2", bundle: "mx.liverpool.contactologistico" },
+  ],
+};
+
+const ANDROID_PR = "https://github.com/Aldrich-Liver/sw-crp-super-app-android/pull/14";
+
+test("reads JUnit reports: totals, skipped and the first line of each failure", () => {
+  const xml = `<?xml version="1.0"?>
+<testsuite name="mx.app.ArranqueTest" tests="3" failures="1">
+  <testcase name="arranca sin red" classname="mx.app.ArranqueTest" time="0.1"/>
+  <testcase name="omite" classname="mx.app.ArranqueTest"><skipped/></testcase>
+  <testcase name="espera &quot;firebase&quot;" classname="mx.app.ArranqueTest">
+    <failure message="expected:&lt;1&gt; but was:&lt;2&gt;&#10;segunda línea" type="AssertionError">stack</failure>
+  </testcase>
+</testsuite>`;
+  const other = `<testsuite><testcase name="x" classname="Otra"><error type="IllegalStateException">boom
+at Otra.kt:3</error></testcase></testsuite>`;
+  assert.deepEqual(parseJunit([xml, other]), {
+    total: 4,
+    failed: 2,
+    skipped: 1,
+    failures: [
+      { test: 'ArranqueTest.espera "firebase"', message: "expected:<1> but was:<2>" },
+      { test: "Otra.x", message: "boom" },
+    ],
+  });
+});
+
+test("only lint errors in files the PR touches count against it", () => {
+  const root = "/agent/repos/monitor-SuperApp/.tester/worktree";
+  const xml = `<issues format="6">
+    <issue id="RestrictedApi" severity="Error" message="dispatchKeyEvent can only be called…" category="Correctness">
+        <location file="${root}/app/src/main/kotlin/MainActivity.kt" line="48" column="18"/>
+    </issue>
+    <issue id="ContextCastToActivity" severity="Error" message="LocalContext should not be cast to Activity">
+        <location file="${root}/app/src/main/kotlin/modulos/vcm/Pantalla.kt" line="12"/>
+    </issue>
+    <issue id="UnusedResources" severity="Warning" message="No se usa">
+        <location file="${root}/app/src/main/res/values/strings.xml" line="3"/>
+    </issue>
+  </issues>`;
+  const issues = parseLint(xml, root);
+  assert.equal(issues[0].file, "app/src/main/kotlin/MainActivity.kt");
+  const verdict = lintVerdict(issues, ["app/src/main/kotlin/modulos/vcm/Pantalla.kt"]);
+  assert.equal(verdict.errors, 1);
+  assert.equal(verdict.previousErrors, 1);
+  assert.equal(verdict.warnings, 1);
+  assert.deepEqual(verdict.issues.map((i) => [i.id, i.line]), [["ContextCastToActivity", 12]]);
+});
+
+test("pulls Kotlin compile errors out of the Gradle log, or what went wrong", () => {
+  const root = "/w";
+  const log = "> Task :app:compileDevDebugKotlin FAILED\ne: file:///w/app/src/main/kotlin/A.kt:10:5 Unresolved reference 'foo'.\nw: file:///w/B.kt:1:1 aviso";
+  assert.deepEqual(compileErrors(log, root), [{ file: "app/src/main/kotlin/A.kt", line: 10, message: "Unresolved reference 'foo'." }]);
+  const other = "FAILURE: Build failed with an exception.\n\n* What went wrong:\nCould not resolve all files for configuration\n  ':app:devDebugRuntimeClasspath'.\n\n* Try:";
+  assert.match(compileErrors(other, root)[0].message, /^Could not resolve all files for configuration ':app:devDebugRuntimeClasspath'\.$/);
+});
+
+test("decides the run's status from Gradle's exit, the tests and lint", () => {
+  const ok = { total: 10, failed: 0 };
+  assert.equal(testStatus({ timedOut: true, exitCode: 1, tests: ok, lint: null }), "timeout");
+  assert.equal(testStatus({ timedOut: false, exitCode: 1, tests: null, lint: null }), "build-failed");
+  assert.equal(testStatus({ timedOut: false, exitCode: 1, tests: { total: 10, failed: 1 }, lint: { errors: 0 } }), "failed");
+  assert.equal(testStatus({ timedOut: false, exitCode: 1, tests: ok, lint: { errors: 2 } }), "failed");
+  // lintDevDebug fails on main's own errors: with none new, the PR passes.
+  assert.equal(testStatus({ timedOut: false, exitCode: 1, tests: ok, lint: { errors: 0, previousErrors: 4 } }), "passed");
+  assert.equal(testStatus({ timedOut: false, exitCode: 1, tests: ok, lint: null }), "error");
+});
+
+test("the test result reads the same in the thread and on GitHub", () => {
+  const result = {
+    app: "Super App Android",
+    pr: { url: ANDROID_PR, number: 14, headSha: "3f2a9c1aa" },
+    status: "failed",
+    tasks: [":app:testDevDebugUnitTest", ":app:lintDevDebug"],
+    tests: { total: 2217, failed: 1, skipped: 0, failures: [{ test: "ArranqueTest.espera", message: "expected:<1> but was:<2>" }] },
+    lint: { errors: 0, previousErrors: 4, warnings: 99, issues: [] },
+    durationS: 266,
+  };
+  const text = testsText(result);
+  assert.match(text, /^:x: \*Pruebas fallidas\* · <https:\/\/github\.com\/.+\/pull\/14\|PR #14> de Super App Android · `3f2a9c1` · 2217 pruebas, 1 fallida · lint sin errores nuevos \(4 previos/);
+  assert.match(text, /• `ArranqueTest\.espera` · expected:&lt;1&gt; but was:&lt;2&gt;/);
+  const comment = testsComment(result);
+  assert.match(comment, /^\*\*❌ Pruebas fallidas\*\* · `3f2a9c1` · 2217 pruebas, 1 fallida/);
+  assert.match(comment, /- `ArranqueTest\.espera`: expected:<1> but was:<2>/);
+  assert.match(testsText({ ...result, status: "passed", tests: { total: 5, failed: 0, failures: [] } }), /^:white_check_mark: \*Pruebas OK\*.*5 pruebas · lint/);
+});
+
+test("the PR announcement carries plain links so the thread can be found by them", () => {
+  const pr = { url: ANDROID_PR, number: 14, title: "Arranque: <rápido>", headBranch: "fix/arranque", author: "dev" };
+  const twinPr = { url: "https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/9", number: 9 };
+  const withTwin = prOpenedText({ pr, app: "Super App Android", twin: { repo: "sw-crp-super-app-ios", branch: "fix/arranque", pr: twinPr } });
+  assert.match(withTwin, /^:arrow_heading_up: \*PR nuevo en Super App Android\* · #14 · Arranque: ‹rápido›$/m);
+  assert.ok(withTwin.includes(`${ANDROID_PR} · \`fix/arranque\` · de dev`));
+  assert.ok(withTwin.includes(":link: Gemelo en iOS: https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/9"));
+  const missing = prOpenedText({ pr, app: "Super App Android", twin: { repo: "sw-crp-super-app-ios", branch: "fix/arranque", pr: null } });
+  assert.match(missing, /:warning: Todavía no hay PR gemelo en sw-crp-super-app-ios con la rama `fix\/arranque`/);
+  const unknown = prOpenedText({ pr, app: "Super App Android", twin: { repo: "sw-crp-super-app-ios", branch: "fix/arranque" } });
+  assert.ok(!/gemelo/i.test(unknown));
+  assert.ok(twinOpenedText({ pr: twinPr, app: "Super App iOS" }).includes("<https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/9|PR #9>"));
+});
+
+// As Slack returns them: Send to Slack turned the report's bold into italics and joined its lines.
+const report = {
+  ts: "1795060856.226779",
+  bot_id: "B1",
+  text: ":rotating_light: _Falla nueva en Super App Android 1.5.10 (295)_ · No fatal · `ArranqueAnfitrion$PasoArranqueExcedido.‹init›` &gt; qt - El paso de arranque 'firebase' no terminó en 10s 4 eventos · 3 usuarios · desde 1.5.8 :thread: Detalle, solución propuesta y seguimiento en el hilo. · Ref. CR-E6CF6D",
+};
+const detail = {
+  ts: "1795060900.000100",
+  bot_id: "B2",
+  text:
+    "*Super App Android 1.5.10 (295)* · No fatal\n*Error:* `ArranqueAnfitrion$PasoArranqueExcedido.&lt;init&gt;`\n*Dónde:* `ArranqueAnfitrion.protegido (ArranqueAnfitrion.kt:76)`\n" +
+    "*Qué está pasando:* La app no se cierra &amp; tarda.\n*Solución propuesta:* Inscribir en paralelo.\n" +
+    "<https://console.firebase.google.com/v1/appid/project/crp-dev-dig-superapp/crashlytics/app/1:393935496247:android:0eb1222bba3d03d8ee8bb2/issues/6848060ad69f7ba1a836c6c636f1731a?&amp;time=1:2&amp;versions=1.5.10%20(295)|Ver en Crashlytics>",
+};
+
+test("recognizes a bug from its thread: report, the Analista's detail and its Crashlytics link", () => {
+  assert.deepEqual(failureFromThread([report, detail], config), {
+    app: "Super App Android",
+    appId: "1:393935496247:android:0eb1222bba3d03d8ee8bb2",
+    sourceRepo: "sw-crp-super-app-android",
+    version: "1.5.10 (295)",
+    title: "ArranqueAnfitrion$PasoArranqueExcedido.<init>",
+    issueId: "6848060ad69f7ba1a836c6c636f1731a",
+    crashlyticsUrl:
+      "https://console.firebase.google.com/v1/appid/project/crp-dev-dig-superapp/crashlytics/app/1:393935496247:android:0eb1222bba3d03d8ee8bb2/issues/6848060ad69f7ba1a836c6c636f1731a?&time=1:2&versions=1.5.10%20(295)",
+    ref: "CR-E6CF6D",
+    analysis: { cause: "La app no se cierra & tarda.", fix: "Inscribir en paralelo." },
+  });
+  const withoutDetail = failureFromThread([report], config);
+  assert.equal(withoutDetail.issueId, null);
+  assert.equal(withoutDetail.version, "1.5.10 (295)");
+  assert.equal(failureFromThread([{ ts: "1", text: "hola" }], config), null);
+  assert.equal(crashlyticsLink("https://console.firebase.google.com/project/p/crashlytics/app/android:com.liverpool.superapp1/issues/abc123").app, "android:com.liverpool.superapp1");
+});
+
+test("finds the bug's thread from a Ref., a thread link or a ts", () => {
+  assert.deepEqual(threadTarget("arregla Ref. cr-e6cf6d porfa"), { ref: "CR-E6CF6D" });
+  assert.deepEqual(threadTarget("https://liverpool.slack.com/archives/C0ABC/p1795060900000100?thread_ts=1795060856.226779&cid=C0ABC"), { ts: "1795060856.226779" });
+  assert.deepEqual(threadTarget("https://liverpool.slack.com/archives/C0ABC/p1795060856226779"), { ts: "1795060856.226779" });
+  assert.deepEqual(threadTarget("1795060856.226779"), { ts: "1795060856.226779" });
+  assert.equal(threadTarget("sin nada"), null);
+});
+
+test("knows when the bug already has a PR, who asked and whether the Corrector is on it", () => {
+  const ask = { ts: "1795061000.000100", user: "U123", text: "<@U0CURSOR> corrige esta falla" };
+  const ack = { ts: "1795061001.000100", bot_id: "B2", text: ":wrench: El *Corrector* toma esta falla de Super App Android: …" };
+  const done = { ts: "1795062000.000100", bot_id: "B2", text: `:hammer_and_wrench: *Corrección propuesta*\n• <${ANDROID_PR}|PR #14> · sw-crp-super-app-android` };
+  const now = 1795061001 * 1000 + 60_000;
+  assert.equal(fixRequester([report, detail, ask, ack]), "U123");
+  assert.ok(fixInProgress([report, ask, ack], now));
+  assert.ok(!fixInProgress([report, ask, ack], now + 3 * 3600 * 1000));
+  assert.ok(!fixInProgress([report, ask, ack, done], now));
+  assert.deepEqual(linkedFixPrs([report, done], "sw-crp-super-app-android").map((p) => p.number), [14]);
+  assert.deepEqual(linkedFixPrs([report, done], "sw-crp-super-app-ios"), []);
+});
+
+test("the Corrector's answer links each PR in the thread", () => {
+  const prs = [
+    { url: ANDROID_PR, number: 14, repo: "sw-crp-super-app-android" },
+    { url: "https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/9", number: 9, repo: "sw-crp-super-app-ios" },
+  ];
+  const text = fixResultText({ status: "fixed", summary: "Ya no se frena.", tested: "Suite de Android", notTested: "iOS no se compiló" }, prs);
+  assert.match(text, /^:hammer_and_wrench: \*Corrección propuesta\*\nYa no se frena\.\n• <https:\/\/github\.com\/.+\/pull\/14\|PR #14> · sw-crp-super-app-android/);
+  assert.match(text, /\*Qué no se probó:\* iOS no se compiló/);
+  assert.match(fixResultText({ status: "no-change", summary: "Es del sistema." }, []), /^:information_source: \*Sin cambios de código\*\nEs del sistema\.$/);
+});
+
+test("finds mentions of the Corrector that it hasn't answered, in any thread", async () => {
+  const NOW = 1_800_000_000_000;
+  const at = (minutesAgo) => String(NOW / 1000 - minutesAgo * 60);
+  const fixer = { userId: "UFIX", botId: "BFIX" };
+  const bug = { ts: at(300), text: report.text, reply_count: 3, latest_reply: at(5) };
+  const done = { ts: at(400), text: "otra falla", reply_count: 2, latest_reply: at(30) };
+  const threads = {
+    [bug.ts]: [bug, { ts: at(200), bot_id: "B2", text: detail.text }, { ts: at(5), user: "UDEV", text: "<@UFIX> corrige esta falla" }],
+    [done.ts]: [done, { ts: at(40), user: "UDEV", text: "<@UFIX> arréglala" }, { ts: at(30), bot_id: "BFIX", user: "UFIX", text: "toma" }],
+  };
+  const slack = { channel: "C1", history: async () => [bug, done], replies: async (ts) => threads[ts] };
+  const pending = await pendingBotMentions(slack, fixer, { now: NOW });
+  assert.deepEqual(pending.map((p) => [p.thread_ts, p.request.user, p.messages.length]), [[bug.ts, "UDEV", 3]]);
+});

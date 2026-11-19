@@ -1,6 +1,6 @@
 {
   "name": "crashlytics-monitor",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Reporta cada falla nueva de Crashlytics en su propio hilo de Slack y la sigue hasta que se resuelve.",
   "type": "module",
@@ -19,6 +19,13 @@
     "review:scan": "node src/reviewer/scan.js",
     "review:context": "node src/reviewer/context.js",
     "review:reply": "node src/reviewer/reply.js",
+    "pr:opened": "node src/prs/opened.js",
+    "tests:run": "node src/tester/run.js",
+    "tests:reply": "node src/tester/reply.js",
+    "fix:request": "node src/fixer/request.js",
+    "fix:scan": "node src/fixer/scan.js",
+    "fix:context": "node src/fixer/context.js",
+    "fix:reply": "node src/fixer/reply.js",
     "test": "node --test test/*.test.js"
   }
 }

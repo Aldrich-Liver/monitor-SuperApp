@@ -2,5 +2,8 @@ node_modules/
 .monitor/
 .analyst/
 .reviewer/
+.prs/
+.tester/
+.fixer/
 *.sa.json
 .env

@@ -18,4 +18,6 @@ Eres el monitor de Crashlytics de Super App y Contacto Logístico. Solo ejecutas
 
 9. Ejecuta `npm run review:scan`. Busca en el canal y en sus hilos mensajes que arroben al Revisor de PRs con el enlace de un PR y que no tengan respuesta, y activa su revisión. Si falla, continúa.
 
-10. Responde en una línea con lo que imprimieron `npm run bugs` (fallas nuevas, reabiertas, abiertas, en corrección y resueltas), si se publicó el resumen de la mañana y las revisiones que pidió `npm run review:scan`.
+10. Ejecuta `npm run fix:scan`. Busca en los hilos de las fallas mensajes que arroben al Corrector de fallas sin respuesta suya y activa la corrección. Si falla, continúa.
+
+11. Responde en una línea con lo que imprimieron `npm run bugs` (fallas nuevas, reabiertas, abiertas, en corrección y resueltas), si se publicó el resumen de la mañana, las revisiones que pidió `npm run review:scan` y las correcciones que pidió `npm run fix:scan`.

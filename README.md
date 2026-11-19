@@ -2,11 +2,14 @@
 
 Revisa cada hora la última versión de Super App y Contacto Logístico (Android e iOS) en el proyecto de Firebase `crp-dev-dig-superapp` y lleva cada falla (crash, no fatal o ANR) en su propio hilo de `#team-mobile`, desde que aparece hasta que se resuelve. Si no hay nada nuevo, no publica nada.
 
-Funciona con tres automatizaciones de Cursor en el environment **Super App**:
+Funciona con seis automatizaciones de Cursor en el environment **Super App**:
 
 1. **Monitor Crashlytics**, programada cada hora. `npm run check` lee Crashlytics, `npm run bugs` lleva el seguimiento de cada falla y `npm run render` escribe un mensaje por cada falla nueva y, cada mañana, el resumen de las fallas abiertas, que Cursor publica con la herramienta Send to Slack. Luego `npm run notify` encuentra cada mensaje por su `Ref. CR-…`, abre su hilo, arroba al Analista y lo activa por webhook, publica los avisos de seguimiento y responde bajo el resumen con los enlaces a cada hilo.
 2. **Analista Crashlytics**, activada por webhook. Ejecuta `npm run details`, lee el código del commit con el que se compiló la versión y escribe la causa y la solución propuesta en palabras simples. Con `npm run reply` responde en el hilo de cada falla.
 3. **Revisor de PRs**, activada por webhook. Revisa cualquier PR de las apps (corrección de una falla, función nueva, mejora, versión…) con los lineamientos, skills y documentos del equipo que viven en el repo, da el visto bueno o pide solo los cambios necesarios, comenta en el PR de GitHub y responde en el hilo.
+4. **PR nuevo**, activada por GitHub al abrir un PR (o marcarlo listo para revisión) en cualquiera de las dos apps. Le da al PR su hilo en `#team-mobile` (o usa el que ya tiene, como el de la falla que corrige), avisa si falta el PR gemelo en la otra plataforma y pide la revisión al Revisor de PRs, sin que nadie tenga que arrobarlo.
+5. **Pruebas de PRs**, activada por GitHub al abrir un PR de Android o subirle commits. Corre `./gradlew :app:testDevDebugUnitTest :app:lintDevDebug` sobre el último commit y publica el resultado en el PR y en su hilo. Mientras el CI esté detenido, es la única verificación automática del código antes del merge.
+6. **Corrector**, activada por webhook cuando alguien escribe `@Cursor corrige esta falla` o arroba a `@Corrector de fallas` en el hilo de una falla. Sigue la skill `investigar-crash` de las apps, corrige la causa en Android y en iOS, abre un PR por repo y responde en el hilo con los enlaces. Eso pone la falla *En corrección*, y la automatización PR nuevo pide la revisión y las pruebas en el mismo hilo.
 
 ```
 :rotating_light: Falla nueva en Super App Android 1.5.5 (290) · No fatal · ArranqueAnfitrion$PasoArranqueExcedido.<init>
@@ -91,9 +94,72 @@ Los gustos de estilo no cuentan. El Revisor no ejecuta código del PR ni cambia 
 
 El Revisor descarga el PR con git (`refs/pull/N/head`), así que solo revisa PRs de repos que puede clonar el environment Super App.
 
+## PR nuevo
+
+Cada PR que se abre en `sw-crp-super-app-android` o `sw-crp-super-app-ios` (o un borrador que se marca listo para revisión) dispara la automatización. `npm run pr:opened` busca si el PR, o su gemelo, ya tiene un hilo en el canal, por ejemplo el de la falla donde el Corrector lo publicó o el aviso del PR gemelo. Hay que tener en cuenta lo siguiente:
+
+- **Si ya tiene hilo**, lo usa. Si el hilo era del gemelo, el bot del monitor deja ahí el enlace de este PR, para que la revisión y las pruebas lo encuentren.
+- **Si no tiene hilo**, Cursor publica en el canal un aviso con el enlace del PR, su rama y el estado del gemelo; su hilo es el del PR.
+- **El gemelo** se busca en la otra plataforma con la misma rama (`AGENTS.md` §2). Si no existe y la descripción no nombra el otro repo, el aviso lo dice.
+
+Después pide la revisión con `npm run review:request -- <URL> --via github`, igual que si alguien hubiera arrobado a Cursor. Los commits nuevos no piden otra revisión; para eso se arroba a Cursor en el hilo.
+
+```
+:arrow_heading_up: PR nuevo en Super App Android · #14 · Arranque: la inscripción a notificaciones ya no frena el arranque
+https://github.com/…/pull/14 · `fix/arranque-notificaciones` · de dev
+:link: Gemelo en iOS: https://github.com/…/pull/9
+:thread: Revisión y pruebas en el hilo.
+   └ :eyes: Reviso el PR #14 de Super App Android con los lineamientos…
+   └ :white_check_mark: Pruebas OK · PR #14 de Super App Android · `3f2a9c1` · 2217 pruebas · lint sin errores nuevos (4 previos en archivos que el PR no toca) · 4 min
+   └ :white_check_mark: Visto bueno · PR #14 …
+```
+
+## Pruebas de PRs
+
+Al abrir un PR de Android y con cada commit nuevo, `npm run tests:run` lo descarga en un worktree aparte (`.tester/worktree`) y corre `./gradlew --no-daemon --continue :app:testDevDebugUnitTest :app:lintDevDebug`. Tarda unos 5 minutos; a los 15 se detiene (`AGENTS.md` §5.7) y lo reporta. Hay que tener en cuenta lo siguiente:
+
+- **Lint:** `main` ya tiene errores de lint, así que solo cuentan los que caen en archivos que el PR toca. Los demás se mencionan como previos.
+- **Resultado:** `Pruebas OK`, `Pruebas fallidas` (con las pruebas y los errores de lint nuevos), `No compila` (con los primeros errores del compilador) o `Pruebas detenidas` si pasó el límite.
+- **Commits seguidos:** si llega un commit mientras corren las pruebas, `tests:reply` no publica el resultado viejo; lo hace la corrida del commit nuevo.
+- **Dónde se publica:** como comentario del PR en GitHub y como respuesta en su hilo de Slack, si tiene uno.
+- **Seguridad:** Gradle corre el código del PR con solo las variables que necesita para compilar (`PATH`, `HOME`, `JAVA_HOME`, `ANDROID_HOME`…), sin los secretos del environment. Los disparadores de GitHub no corren con PRs de forks.
+
+iOS no se prueba: los agentes en la nube corren en Linux y no hay Xcode. El Revisor sí revisa los PR de iOS.
+
+## Corrector
+
+Se pide en el hilo de la falla, de una de estas formas:
+
+- **Arrobando a Cursor:** `@Cursor corrige esta falla`. Cursor lee [`AGENTS.md`](AGENTS.md) y ejecuta `npm run fix:request -- CR-…` con la referencia del mensaje que abre el hilo. Empieza en segundos.
+- **Arrobando al bot:** `@Corrector de fallas`. El bot no recibe eventos de Slack, así que el monitor, en su corrida de cada hora, encuentra la mención con `npm run fix:scan` y activa la corrección. El bot contesta toda mención, aunque sea para decir que la falla ya tiene PR, y esa respuesta es la que la marca como atendida.
+
+Las dos formas hacen lo mismo. El comando reconoce la falla con lo que ya está en el hilo (el reporte y el detalle del Analista, con su enlace a Crashlytics), avisa que el Corrector la tomó y lo activa por webhook. No lo activa si la falla ya tiene un PR en su hilo o si el Corrector la tomó hace menos de 2 h; `--force` pide otra corrección de todos modos.
+
+El Corrector ejecuta `npm run fix:context`, que agrega un evento de muestra de Crashlytics con su stack trace y el commit de la versión, y sigue la skill `investigar-crash` de las apps en modo autónomo (`GUIA-DEL-EQUIPO.md` §2):
+
+- **Corrige la causa con el cambio mínimo**, con la misma rama `fix/…` en Android y en iOS, una prueba que reproduce el caso y la suite de Android. iOS sale sin compilar, y el PR lo dice.
+- **Sin cambios de código** si la falla no es de la app, si `main` ya la corrigió o si los datos no alcanzan. En ese caso responde en el hilo con la causa y qué haría falta.
+- **Nunca** publica versiones, toca Firebase, usa el keystore ni fusiona.
+
+Con `npm run fix:reply` responde en el hilo con los enlaces. Eso pone la falla *En corrección* en el monitor, y la automatización PR nuevo pide en ese mismo hilo la revisión y las pruebas de cada PR.
+
+```
+   └ @dev: @Cursor corrige esta falla
+   └ :wrench: El Corrector toma esta falla de Super App Android: busca la causa en el código, la corrige en Android y en iOS y responde aquí con los PR.
+   └ :hammer_and_wrench: Corrección propuesta
+     La inscripción a notificaciones se espera en paralelo y el aviso ya no se envía sin red o en segundo plano.
+     • PR #14 · sw-crp-super-app-android
+     • PR #9 · sw-crp-super-app-ios
+     Qué se probó: ArranqueAnfitrionTest y la suite de Android (2219/2219).
+     Qué no se probó: iOS no se compiló; los agentes en la nube corren en Linux.
+   └ :hammer_and_wrench: En corrección con el PR #14…
+```
+
 ## Requisitos
 
 Node.js 20 o superior. No hay dependencias que instalar.
+
+Pruebas de PRs y Corrector necesitan además el JDK 21 y el SDK de Android del environment Super App, que prepara `herramientas/nube/instalar.sh` del repo de Android.
 
 ## Variables de entorno
 
@@ -110,6 +176,9 @@ Node.js 20 o superior. No hay dependencias que instalar.
 | `REVIEWER_WEBHOOK_URL`, `REVIEWER_WEBHOOK_KEY` | URL y llave del webhook de la automatización Revisor de PRs. |
 | `SLACK_REVIEWER_BOT_TOKEN` | Token del bot del Revisor. Con él, el Revisor responde con su propio nombre y `review:scan` encuentra sus menciones. Sin él, responde el bot del Analista o el del monitor. |
 | `GITHUB_TOKEN` | Opcional: token de solo lectura para la API de GitHub. Sin él, el Revisor usa el token que el environment le da a git. |
+| `FIXER_WEBHOOK_URL`, `FIXER_WEBHOOK_KEY` | URL y llave del webhook de la automatización Corrector. |
+| `SLACK_FIXER_BOT_TOKEN` | Token del bot del Corrector. Con él, el Corrector responde con su propio nombre y `fix:scan` encuentra sus menciones. Sin él, responde el bot del Analista o el del monitor, y solo se le pide con `@Cursor`. |
+| `SLACK_TESTER_BOT_TOKEN` | Opcional: token del bot de Pruebas de PRs, para que los resultados salgan con su propio nombre. Sin él, responde el bot del monitor. |
 
 ## Uso local
 
@@ -139,6 +208,20 @@ npm run review:context                       # escribe .reviewer/context.json y 
 # escribe .reviewer/review.json: { "verdict": "approve" | "changes", "summary": "...", "items": [...] }
 npm run review:reply -- --dry-run
 npm run review:scan -- --dry-run             # menciones al bot del Revisor sin responder
+
+# PR nuevo: hilo, gemelo y mensaje para Send to Slack en .prs/messages.json
+npm run pr:opened -- https://github.com/Aldrich-Liver/sw-crp-super-app-android/pull/14 --dry-run
+
+# Pruebas de PRs (--include-closed para probar con un PR ya fusionado)
+npm run tests:run -- https://github.com/Aldrich-Liver/sw-crp-super-app-android/pull/7 --include-closed
+npm run tests:reply -- --dry-run             # escribe .tester/comment.md y muestra la respuesta del hilo
+
+# Corrector: el payload que imprime fix:request va en .fixer/payload.json
+npm run fix:request -- CR-E6CF6D --dry-run
+npm run fix:scan -- --dry-run                # menciones al bot del Corrector sin responder
+npm run fix:context                          # escribe .fixer/context.json
+# escribe .fixer/result.json: { "status": "fixed" | "no-change" | "error", "summary": "...", "prs": [...] }
+npm run fix:reply -- --dry-run
 npm test
 ```
 
@@ -184,6 +267,35 @@ En [cursor.com/automations](https://cursor.com/automations):
    - **Prompt:** [`automation/reviewer-prompt.md`](automation/reviewer-prompt.md).
    - **Modelo:** uno fuerte en revisión de código.
 3. Para que `@Cursor` corra en el environment Super App al pedir una revisión, agrega en el dashboard de Cursor, en **Cloud Agents**, una regla de enrutamiento (routing rule) con la palabra `revisa` apuntando al environment Super App, o escribe `env="Super App"` en el mensaje.
+
+### 5. PR nuevo
+
+- **Disparadores:** GitHub, *Pull request opened*, uno para `sw-crp-super-app-android` y otro para `sw-crp-super-app-ios`. Incluye los borradores que se marcan listos para revisión.
+- **Environment:** Super App.
+- **Herramientas:** Send to Slack, con el canal fijo `#team-mobile`.
+- **Prompt:** [`automation/pr-opened-prompt.md`](automation/pr-opened-prompt.md).
+- **Modelo:** uno rápido y económico; solo ejecuta comandos.
+
+### 6. Pruebas de PRs
+
+Opcional: crea la app de Slack con los pasos del bot, usando [`slack/tester-manifest.json`](slack/tester-manifest.json). Guarda su token en `SLACK_TESTER_BOT_TOKEN` e invítala con `/invite @Pruebas de PRs`.
+
+- **Disparadores:** GitHub, *Pull request opened* y *Pull request pushed*, en `sw-crp-super-app-android`.
+- **Environment:** Super App.
+- **Herramientas:** Comment on pull request, sin aprobaciones: solo comenta.
+- **Prompt:** [`automation/tester-prompt.md`](automation/tester-prompt.md).
+- **Modelo:** uno rápido y económico; solo ejecuta comandos.
+
+### 7. Corrector
+
+1. Crea la app de Slack con los pasos del bot, usando [`slack/fixer-manifest.json`](slack/fixer-manifest.json). Guarda su token en `SLACK_FIXER_BOT_TOKEN` e invítala con `/invite @Corrector de fallas`.
+2. Crea la automatización:
+   - **Disparador:** Webhook. Copia la URL y la llave a `FIXER_WEBHOOK_URL` y `FIXER_WEBHOOK_KEY`.
+   - **Environment:** Super App, con los dos repos de las apps.
+   - **Herramientas:** la de crear pull requests, que viene activada.
+   - **Prompt:** [`automation/fixer-prompt.md`](automation/fixer-prompt.md).
+   - **Modelo:** uno fuerte en código.
+3. Agrega a la regla de enrutamiento de `@Cursor` la palabra `corrige`, apuntando al environment Super App, igual que `revisa`.
 
 Todos los secretos van en **Cloud Agents > Secrets** como Runtime Secret, disponibles para el environment Super App.
 
