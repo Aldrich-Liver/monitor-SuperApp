@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { crashlyticsLink, failureFromThread, fixInProgress, fixRequester, linkedFixPrs, threadTarget } from "../src/fixer/thread.js";
 import { parsePr } from "../src/reviewer/pr.js";
-import { FIX_ASK, REVIEW_ASK, pendingBotMentions, pendingMentions, reviewVerdict } from "../src/reviewer/thread.js";
+import { FIX_VERBS, REVIEW_VERBS, askPattern, pendingBotMentions, pendingMentions, reviewVerdict } from "../src/reviewer/thread.js";
 import { fixResultText, prOpenedText, testsComment, testsText, twinOpenedText } from "../src/format.js";
 import { testsVerdict } from "../src/tester/thread.js";
 import { compileErrors, lintVerdict, parseJunit, parseLint, testStatus } from "../src/tester/results.js";
@@ -248,7 +248,8 @@ test("picks up '@Cursor corrige esta falla' that reached an automation instead o
   const threads = {
     [bug.ts]: [
       bug,
-      { ts: at(299), bot_id: "BMON", user: "UMON", text: ":mag: <@UANA>, revisa y corrige esta falla" },
+      { ts: at(299), bot_id: "BMON", user: "UMON", text: ":mag: <@UCURSOR>, revisa y corrige esta falla" },
+      { ts: at(200), user: "UDEV", text: "<@UJUAN> corrige esta falla porfa" },
       { ts: at(10), user: "UDEV", text: "<@UCURSOR> corrige esta falla" },
       { ts: at(1), user: "UDEV", text: "<@UCURSOR> corrige esta falla" },
     ],
@@ -259,10 +260,14 @@ test("picks up '@Cursor corrige esta falla' that reached an automation instead o
     ],
   };
   const slack = { channel: "C1", history: async () => [bug, answeredBug], replies: async (ts) => threads[ts] };
+  const FIX_ASK = askPattern("UCURSOR", FIX_VERBS);
   const pending = await pendingBotMentions(slack, fixer, { now: NOW, asks: FIX_ASK, minAgeMin: 5 });
   assert.deepEqual(pending.map((p) => [p.thread_ts, p.request.ts, p.via]), [[bug.ts, at(10), "ask"]]);
   assert.equal((await pendingBotMentions(slack, fixer, { now: NOW })).length, 0);
   assert.ok(!FIX_ASK.test("corrige esta falla"));
+  assert.ok(!FIX_ASK.test("<@UJUAN> arregla esto"));
+  assert.ok(!FIX_ASK.test("<@UCURSOR> ¿quién corrigió esto?"));
+  assert.equal(askPattern(undefined, FIX_VERBS), null);
 });
 
 test("picks up '@Cursor revisa este PR' with a link that the Revisor hasn't answered", async () => {
@@ -274,7 +279,8 @@ test("picks up '@Cursor revisa este PR' with a link that the Revisor hasn't answ
     [top.ts]: [top, { ts: at(20), user: "UDEV", text: "<@UCURSOR> revisa otra vez" }, { ts: at(10), user: "UDEV", text: `<@UCURSOR> revisa este PR <${ANDROID_PR}>` }],
   };
   const slack = { channel: "C1", history: async () => [top], replies: async (ts) => threads[ts] };
-  const pending = await pendingMentions(slack, reviewer, { now: NOW });
+  const pending = await pendingMentions(slack, reviewer, { now: NOW, cursorUserId: "UCURSOR" });
   assert.deepEqual(pending.map((p) => [p.request.ts, p.prs[0].number]), [[at(10), 14]]);
-  assert.ok(REVIEW_ASK.test("<@U1> ¿lo revisas?"));
+  assert.equal((await pendingMentions(slack, reviewer, { now: NOW, cursorUserId: "UOTRO" })).length, 0);
+  assert.ok(askPattern("U1", REVIEW_VERBS).test("<@U1> ¿lo revisas?"));
 });

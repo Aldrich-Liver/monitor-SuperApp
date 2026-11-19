@@ -80,14 +80,20 @@ export function answered(messages, request, reviewer) {
  * Messages that mention the reviewer bot, or ask for a review, next to a PR link and have no reviewer
  * reply after them. The bot does not receive Slack events, so the monitor runs this to pick them up.
  */
-export async function pendingMentions(slack, reviewer, options = {}) {
-  const pending = await pendingBotMentions(slack, reviewer, { asks: REVIEW_ASK, ...options });
+export async function pendingMentions(slack, reviewer, { cursorUserId = null, ...options } = {}) {
+  const pending = await pendingBotMentions(slack, reviewer, { asks: askPattern(cursorUserId, REVIEW_VERBS), ...options });
   return pending.map((item) => ({ ...item, prs: prUrls(textOf(item.request)) })).filter((item) => item.prs.length);
 }
 
-/** A person mentioning someone (usually @Cursor) and asking for a review or a fix in the same message. */
-export const REVIEW_ASK = /<@[UW][A-Z0-9]+>[\s\S]*\brevis/i;
-export const FIX_ASK = /<@[UW][A-Z0-9]+>[\s\S]*\b(corrige|corregir|corrijan?|arregla|arreglar)\b/i;
+/**
+ * A request to @Cursor (by its Slack member ID) in the same message as one of `verbs`. Messages
+ * that mention anyone else don't count, so asking a teammate to fix something never starts an agent.
+ */
+export function askPattern(userId, verbs) {
+  return userId ? new RegExp(`<@${userId}>[\\s\\S]*\\b(${verbs})`, "i") : null;
+}
+export const REVIEW_VERBS = "revis";
+export const FIX_VERBS = "corrige\\b|corregir\\b|corrijan?\\b|arregla\\b|arreglar\\b";
 
 const fromPerson = (m) => Boolean(m.user) && !m.bot_id && m.subtype !== "bot_message";
 

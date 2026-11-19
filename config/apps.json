@@ -6,6 +6,7 @@
   "maxAnalyzedFailures": 8,
   "resolveAfterHours": 48,
   "digestHour": 9,
+  "cursorUserId": "U0C5A4H8UB0",
   "apps": [
     {
       "name": "Super App Android",

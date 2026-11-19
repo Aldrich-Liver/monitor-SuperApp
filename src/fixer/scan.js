@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { readJson } from "../files.js";
-import { FIX_ASK, pendingBotMentions } from "../reviewer/thread.js";
+import { FIX_VERBS, askPattern, pendingBotMentions } from "../reviewer/thread.js";
 import { botIdentity, slackClient } from "../slack.js";
 import { FixRefused, requestFix } from "./requests.js";
 
@@ -36,7 +36,7 @@ const answer = async (text, threadTs) => {
 // Each mention gets one answer from the Corrector, even a refusal; that answer is what marks it as handled.
 let requested = 0;
 const FAILURE_REPORT = /Ref\. CR-[0-9A-F]{6}/i;
-const found = await pendingBotMentions(reader, fixer, { hours: Number(args.hours), minAgeMin: Number(args["min-age-min"]), asks: FIX_ASK });
+const found = await pendingBotMentions(reader, fixer, { hours: Number(args.hours), minAgeMin: Number(args["min-age-min"]), asks: askPattern(config.cursorUserId, FIX_VERBS) });
 // Without the bot's mention, only a request in a failure's thread counts as asking the Corrector.
 const pending = found.filter((item) => item.via === "mention" || FAILURE_REPORT.test(item.messages[0]?.text ?? ""));
 const threads = new Map();
