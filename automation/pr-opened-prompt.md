@@ -11,7 +11,8 @@ Reglas: no revises el PR tú, no modifiques ningún repositorio (nada de commits
 4. Si `.prs/messages.json` trae un texto, envíalo al canal `#team-mobile` con la herramienta Send to Slack, exactamente como está, sin agregar, quitar ni reformatear nada (el enlace del PR debe llegar intacto). No respondas en ningún hilo.
 
 5. Pide la revisión:
+   - Si `.prs/opened.json` trae `"fixerActive": true`, no la pidas: es un PR del Corrector, que pide y atiende su propia revisión. Ve al paso 6.
    - Si `.prs/opened.json` trae `thread_ts`, ejecuta `npm run review:request -- <enlace del PR> --via github --thread <thread_ts>`.
    - Si no, ejecuta `npm run review:request -- <enlace del PR> --via github --wait 60`, que encuentra el mensaje que acabas de enviar.
 
-6. Responde en una línea: si se publicó un mensaje nuevo o se usó un hilo existente, cómo está el gemelo y si se pidió la revisión o el error que imprimió el comando.
+6. Responde en una línea: si se publicó un mensaje nuevo o se usó un hilo existente, cómo está el gemelo y si se pidió la revisión (o si la lleva el Corrector) o el error que imprimió el comando.

@@ -103,3 +103,33 @@ export async function pendingBotMentions(slack, bot, { hours = 26, now = Date.no
   }
   return pending;
 }
+
+const REVIEW_ACK = /^:eyes: /;
+const REVIEWER_DOWN = /^:warning: No se pudo activar al Revisor/;
+const VERDICTS = [
+  [/^:white_check_mark: \*Visto bueno\*/, "approve"],
+  [/^:warning: \*Cambios necesarios\*/, "changes"],
+  [/^:x: \*No pude revisar el\*/, "error"],
+];
+
+/**
+ * The Revisor's answer to the latest review requested for a PR in the thread: `pending` while it
+ * works, then `approve`, `changes` or `error`, with the text it posted. Null when it was never asked.
+ */
+export function reviewVerdict(messages, pr) {
+  let result = null;
+  for (const m of messages) {
+    const text = m.text ?? "";
+    if (mentionsPr(text, pr) && REVIEW_ACK.test(text)) {
+      result = { status: "pending", ts: m.ts, text: null };
+      continue;
+    }
+    if (result?.status !== "pending") continue;
+    if (REVIEWER_DOWN.test(text)) result = { status: "error", ts: m.ts, text };
+    else if (mentionsPr(text, pr)) {
+      const found = VERDICTS.find(([re]) => re.test(text));
+      if (found) result = { status: found[1], ts: m.ts, text };
+    }
+  }
+  return result;
+}

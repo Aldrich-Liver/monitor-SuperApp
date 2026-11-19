@@ -280,7 +280,7 @@ function testsHeadline(result) {
   return [counts, lintPart, minutes(result.durationS)].filter(Boolean).join(" · ");
 }
 
-const TEST_STATUS = {
+export const TEST_STATUS = {
   passed: ":white_check_mark: *Pruebas OK*",
   failed: ":x: *Pruebas fallidas*",
   "build-failed": ":x: *No compila*",
@@ -367,6 +367,7 @@ export function fixerUnavailableText(reason) {
 /** The Corrector's answer in the bug's thread. Linking the PRs here is what puts the bug in correction. */
 export function fixResultText(result, prs) {
   const head = {
+    "in-review": ":arrows_counterclockwise: *PR abiertos, en verificación*",
     fixed: ":hammer_and_wrench: *Corrección propuesta*",
     "no-change": ":information_source: *Sin cambios de código*",
     error: ":x: *No pude corregir esta falla*",
@@ -374,8 +375,15 @@ export function fixResultText(result, prs) {
   const lines = [head];
   if (result.summary) lines.push(escape(result.summary));
   for (const pr of prs) lines.push(`• ${prLink(pr)} · ${escape(pr.repo)}`);
+  if (result.status === "in-review") {
+    lines.push("_Corro las pruebas, pido la revisión y atiendo lo que pida; respondo aquí cuando termine._");
+    return truncate(lines.join("\n"), MESSAGE_LIMIT);
+  }
+  if (result.checks) lines.push(`*Pruebas:* ${escape(result.checks)}`);
+  if (result.review) lines.push(`*Revisión:* ${escape(result.review)}`);
   if (result.tested) lines.push(`*Qué se probó:* ${escape(result.tested)}`);
   if (result.notTested) lines.push(`*Qué no se probó:* ${escape(result.notTested)}`);
-  if (prs.length) lines.push("_Los PR requieren revisión y merge de una persona._");
+  if (result.pending) lines.push(`*Pendiente para una persona:* ${escape(result.pending)}`);
+  if (prs.length) lines.push("_El merge lo hace una persona._");
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }

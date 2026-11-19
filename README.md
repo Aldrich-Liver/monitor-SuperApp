@@ -133,7 +133,7 @@ Se pide en el hilo de la falla, de una de estas formas:
 - **Arrobando a Cursor:** `@Cursor corrige esta falla`. Cursor lee [`AGENTS.md`](AGENTS.md) y ejecuta `npm run fix:request -- CR-…` con la referencia del mensaje que abre el hilo. Empieza en segundos.
 - **Arrobando al bot:** `@Corrector de fallas`. El bot no recibe eventos de Slack, así que el monitor, en su corrida de cada hora, encuentra la mención con `npm run fix:scan` y activa la corrección. El bot contesta toda mención, aunque sea para decir que la falla ya tiene PR, y esa respuesta es la que la marca como atendida.
 
-Las dos formas hacen lo mismo. El comando reconoce la falla con lo que ya está en el hilo (el reporte y el detalle del Analista, con su enlace a Crashlytics), avisa que el Corrector la tomó y lo activa por webhook. No lo activa si la falla ya tiene un PR en su hilo o si el Corrector la tomó hace menos de 2 h; `--force` pide otra corrección de todos modos.
+Las dos formas hacen lo mismo. El comando reconoce la falla con lo que ya está en el hilo (el reporte y el detalle del Analista, con su enlace a Crashlytics), avisa que el Corrector la tomó y lo activa por webhook. No lo activa si la falla ya tiene un PR en su hilo o si el Corrector la tomó hace menos de 3 h y no ha dado su respuesta final; `--force` pide otra corrección de todos modos.
 
 El Corrector ejecuta `npm run fix:context`, que agrega un evento de muestra de Crashlytics con su stack trace y el commit de la versión, y sigue la skill `investigar-crash` de las apps en modo autónomo (`GUIA-DEL-EQUIPO.md` §2):
 
@@ -141,18 +141,44 @@ El Corrector ejecuta `npm run fix:context`, que agrega un evento de muestra de C
 - **Sin cambios de código** si la falla no es de la app, si `main` ya la corrigió o si los datos no alcanzan. En ese caso responde en el hilo con la causa y qué haría falta.
 - **Nunca** publica versiones, toca Firebase, usa el keystore ni fusiona.
 
-Con `npm run fix:reply` responde en el hilo con los enlaces. Eso pone la falla *En corrección* en el monitor, y la automatización PR nuevo pide en ese mismo hilo la revisión y las pruebas de cada PR.
+El Corrector no termina al abrir los PR: lleva la falla hasta dejar los PR listos para que una persona los fusione.
+
+1. **Avisa en el hilo** con `fix:reply` y los enlaces de los PR, en estado *en verificación*. Eso pone la falla *En corrección* en el monitor. La automatización PR nuevo ve que el Corrector lleva el PR y no pide otra revisión.
+2. **Verifica en rondas**, como máximo tres:
+   1. Espera con `tests:wait` el resultado que la automatización Pruebas de PRs publica en el hilo para su último commit (GitHub la activa al abrir el PR y con cada push). Si no llega en 25 minutos, corre `tests:run` él mismo. Corrige en su rama lo que falle.
+   2. Pide la revisión a la automatización Revisor de PRs con `review:request --thread` y espera su veredicto con `review:wait`, hasta 30 minutos.
+   3. Si el Revisor pide cambios, atiende los puntos válidos, hace push en la misma rama y empieza otra ronda. En la tercera ya no cambia código.
+   4. Los puntos que contradicen los lineamientos no se hacen; quedan en *Pendiente para una persona*.
+3. **Responde una sola vez al final**, con la causa, los PR, el resultado de las pruebas, el veredicto del Revisor, qué no se probó y lo que queda para una persona.
+
+El Corrector no repite el trabajo de las demás automatizaciones, las usa:
+
+| Automatización | Cómo la activa el Corrector | Cómo lee su resultado |
+|---|---|---|
+| Analista Crashlytics | Ya respondió en el hilo antes de que se pidiera la corrección | `fix:request` toma su causa y su solución del hilo |
+| PR nuevo | GitHub, al abrir cada PR | No hace falta: solo deja el PR en el hilo de la falla y no pide otra revisión |
+| Pruebas de PRs | GitHub, al abrir el PR de Android y con cada push | `tests:wait` lee su resultado en el hilo |
+| Revisor de PRs | Webhook, con `review:request` | `review:wait` lee su veredicto en el hilo |
+
+El que decide qué falta y no suelta la falla es el Corrector.
 
 ```
    └ @dev: @Cursor corrige esta falla
    └ :wrench: El Corrector toma esta falla de Super App Android: busca la causa en el código, la corrige en Android y en iOS y responde aquí con los PR.
-   └ :hammer_and_wrench: Corrección propuesta
+   └ :arrows_counterclockwise: PR abiertos, en verificación
      La inscripción a notificaciones se espera en paralelo y el aviso ya no se envía sin red o en segundo plano.
      • PR #14 · sw-crp-super-app-android
      • PR #9 · sw-crp-super-app-ios
-     Qué se probó: ArranqueAnfitrionTest y la suite de Android (2219/2219).
-     Qué no se probó: iOS no se compiló; los agentes en la nube corren en Linux.
    └ :hammer_and_wrench: En corrección con el PR #14…
+   └ :white_check_mark: Pruebas OK · PR #14 …                      ← Pruebas de PRs
+   └ :eyes: Reviso el PR #14 … / :warning: Cambios necesarios · PR #14 …
+   └ :eyes: Reviso el PR #14 … / :white_check_mark: Visto bueno · PR #14 …
+   └ :hammer_and_wrench: Corrección propuesta
+     • PR #14 · sw-crp-super-app-android
+     • PR #9 · sw-crp-super-app-ios
+     Pruebas: 2219 pruebas OK, sin errores de lint nuevos.
+     Revisión: Visto bueno en los dos PR, en 2 rondas.
+     Qué no se probó: iOS no se compiló; los agentes en la nube corren en Linux.
 ```
 
 ## Requisitos
@@ -220,8 +246,10 @@ npm run tests:reply -- --dry-run             # escribe .tester/comment.md y mues
 npm run fix:request -- CR-E6CF6D --dry-run
 npm run fix:scan -- --dry-run                # menciones al bot del Corrector sin responder
 npm run fix:context                          # escribe .fixer/context.json
-# escribe .fixer/result.json: { "status": "fixed" | "no-change" | "error", "summary": "...", "prs": [...] }
+# escribe .fixer/result.json: { "status": "in-review" | "fixed" | "no-change" | "error", "summary": "...", "prs": [...] }
 npm run fix:reply -- --dry-run
+npm run review:wait -- https://github.com/Aldrich-Liver/sw-crp-super-app-android/pull/3 --thread 1795046617.681619 --timeout-min 0
+npm run tests:wait -- https://github.com/Aldrich-Liver/sw-crp-super-app-android/pull/14 --thread <ts> --timeout-min 0
 npm test
 ```
 

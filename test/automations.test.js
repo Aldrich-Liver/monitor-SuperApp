@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { crashlyticsLink, failureFromThread, fixInProgress, fixRequester, linkedFixPrs, threadTarget } from "../src/fixer/thread.js";
-import { pendingBotMentions } from "../src/reviewer/thread.js";
+import { parsePr } from "../src/reviewer/pr.js";
+import { pendingBotMentions, reviewVerdict } from "../src/reviewer/thread.js";
 import { fixResultText, prOpenedText, testsComment, testsText, twinOpenedText } from "../src/format.js";
+import { testsVerdict } from "../src/tester/thread.js";
 import { compileErrors, lintVerdict, parseJunit, parseLint, testStatus } from "../src/tester/results.js";
 
 const config = {
@@ -191,4 +193,48 @@ test("finds mentions of the Corrector that it hasn't answered, in any thread", a
   const slack = { channel: "C1", history: async () => [bug, done], replies: async (ts) => threads[ts] };
   const pending = await pendingBotMentions(slack, fixer, { now: NOW });
   assert.deepEqual(pending.map((p) => [p.thread_ts, p.request.user, p.messages.length]), [[bug.ts, "UDEV", 3]]);
+});
+
+test("reads the Revisor's verdict for the latest review asked of each PR", () => {
+  const pr = parsePr(ANDROID_PR);
+  const ios = parsePr("https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/9");
+  const link = `<${ANDROID_PR}|PR #14>`;
+  const ack = (ts) => ({ ts, text: `:eyes: Reviso el ${link} de Super App Android con los lineamientos…` });
+  const tests = { ts: "3", text: `:x: *Pruebas fallidas* · ${link} de Super App Android` };
+  const changes = { ts: "4", text: `:warning: *Cambios necesarios* · ${link} · Super App Android\n1. falta la prueba` };
+  const approve = { ts: "6", text: `:white_check_mark: *Visto bueno* · ${link} · Super App Android` };
+  assert.equal(reviewVerdict([report], pr), null);
+  assert.equal(reviewVerdict([report, ack("2"), tests], pr).status, "pending");
+  assert.equal(reviewVerdict([report, ack("2"), tests, changes], pr).status, "changes");
+  // A second round: the earlier verdict no longer counts until the new one arrives.
+  assert.equal(reviewVerdict([report, ack("2"), changes, ack("5")], pr).status, "pending");
+  assert.deepEqual(reviewVerdict([report, ack("2"), changes, ack("5"), approve], pr), { status: "approve", ts: "6", text: approve.text });
+  assert.equal(reviewVerdict([report, ack("2"), { ts: "3", text: ":warning: No se pudo activar al Revisor de PRs: webhook 500" }], pr).status, "error");
+  assert.equal(reviewVerdict([report, ack("2"), changes], ios), null);
+});
+
+test("the Corrector first posts its PRs as in verification, without counting as its final answer", () => {
+  const prs = [{ url: ANDROID_PR, number: 14, repo: "sw-crp-super-app-android" }];
+  const interim = fixResultText({ status: "in-review", summary: "Ya no se frena.", tested: "no debe salir" }, prs);
+  assert.match(interim, /^:arrows_counterclockwise: \*PR abiertos, en verificación\*\nYa no se frena\.\n• <https:.+\|PR #14>/);
+  assert.ok(!interim.includes("no debe salir"));
+  const ack = { ts: "1795061001.000100", text: ":wrench: El *Corrector* toma esta falla de Super App Android: …" };
+  const now = 1795061001 * 1000 + 60_000;
+  assert.ok(fixInProgress([report, ack, { ts: "1795061100.000100", text: interim }], now));
+  const final = fixResultText({ status: "fixed", summary: "Listo.", checks: "2219 pruebas OK", review: "Visto bueno en los dos PR, 2 rondas", pending: "Probar el APK release" }, prs);
+  assert.match(final, /\*Pruebas:\* 2219 pruebas OK\n\*Revisión:\* Visto bueno en los dos PR, 2 rondas/);
+  assert.match(final, /\*Pendiente para una persona:\* Probar el APK release/);
+  assert.ok(!fixInProgress([report, ack, { ts: "1795061100.000100", text: interim }, { ts: "1795062000.000100", text: final }], now));
+});
+
+test("reads the result Pruebas de PRs posted for the PR's latest commit", () => {
+  const pr = parsePr(ANDROID_PR);
+  const base = { app: "Super App Android", tasks: [], tests: { total: 5, failed: 0, failures: [] }, lint: null, durationS: 200 };
+  const failed = { ts: "2", text: testsText({ ...base, pr: { url: ANDROID_PR, number: 14, headSha: "aaaaaaa111" }, status: "failed", tests: { total: 5, failed: 1, failures: [] } }) };
+  const passed = { ts: "3", text: testsText({ ...base, pr: { url: ANDROID_PR, number: 14, headSha: "bbbbbbb222" }, status: "passed" }) };
+  const review = { ts: "4", text: `:eyes: Reviso el <${ANDROID_PR}|PR #14> de Super App Android…` };
+  assert.equal(testsVerdict([report, failed, review], pr, "aaaaaaa111").status, "failed");
+  assert.equal(testsVerdict([report, failed, review], pr, "bbbbbbb222"), null);
+  assert.deepEqual(testsVerdict([report, failed, passed, review], pr, "bbbbbbb222"), { status: "passed", ts: "3", text: passed.text });
+  assert.equal(testsVerdict([report, passed], parsePr("https://github.com/Aldrich-Liver/sw-crp-super-app-android/pull/15"), "bbbbbbb222"), null);
 });
