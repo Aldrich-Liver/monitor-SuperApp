@@ -6,7 +6,7 @@ Eres el monitor de Crashlytics de Super App y Contacto Logístico. Solo ejecutas
 
 3. Ejecuta `npm run check`. Si falla, termina sin tocar la memoria.
 
-4. Ejecuta `npm run bugs`. Lleva el seguimiento de cada falla: abre las nuevas, reabre las que volvieron, revisa los PR que pegaron en sus hilos y da por resueltas las que llevan 48 h sin eventos. Si falla, termina sin tocar la memoria.
+4. Ejecuta `npm run bugs`. Lleva el seguimiento de cada falla: abre las nuevas, reabre las que volvieron, revisa los PR que pegaron en sus hilos, pone en revisión las que el Corrector revisó sin encontrar un cambio de código y da por resueltas las que llevan 48 h sin eventos. Si falla, termina sin tocar la memoria.
 
 5. Ejecuta `npm run render`. Escribe `.monitor/messages.json`, un arreglo de textos ya formateados: uno por cada falla nueva, el aviso de versión nueva o de error si los hay y, una vez al día a partir de las 9:00 (hora CDMX), el resumen de las fallas abiertas. Si el arreglo está vacío, ve directo al paso 7.
 

@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { containsChanges, git } from "../src/repos.js";
-import { digestBugs, digestDue, markReleased, mergedPr, pruneResolved, resolveQuiet, syncPrs, trackFailures } from "../src/bugs.js";
+import { digestBugs, digestDue, markReleased, markReviewed, mergedPr, pruneResolved, resolveQuiet, syncPrs, trackFailures } from "../src/bugs.js";
 import { digestLinksText, digestText, neutralize } from "../src/format.js";
 import { slackClient } from "../src/slack.js";
+import { noChangeVerdict } from "../src/fixer/thread.js";
 
 const H = 60 * 60 * 1000;
 const t0 = new Date("2026-11-18T18:00:00Z");
@@ -225,4 +226,40 @@ test("bots never start a conversation in the channel", async () => {
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+test("a bug the Corrector found needs no code change is in review, not open, until it shows up in another version", () => {
+  const bug = openBug()["app:a"];
+  const ask = { ts: String(at(1).getTime() / 1000), user: "UDEV", text: "<@UCURSOR> corrige esta falla" };
+  const noChange = { ts: String(at(2).getTime() / 1000), bot_id: "BFIX", text: ":information_source: *Sin cambios de código*\nEs del controlador de gráficos." };
+  const fixed = { ts: String(at(3).getTime() / 1000), bot_id: "BFIX", text: ":hammer_and_wrench: *Corrección propuesta*\nYa no se frena." };
+  assert.equal(noChangeVerdict([ask]), null);
+  assert.equal(noChangeVerdict([ask, { ...noChange, bot_id: undefined, user: "UDEV" }]), null, "a person quoting it doesn't count");
+  assert.equal(noChangeVerdict([ask, noChange, fixed]), null);
+
+  const verdict = noChangeVerdict([ask, noChange]);
+  const [notice] = markReviewed(bug, verdict, 48);
+  assert.equal(bug.status, "watching");
+  assert.match(notice.text, /^:eye: \*En revisión\* · El Corrector no encontró un cambio de código/);
+  assert.deepEqual(markReviewed(bug, verdict, 48), [], "only once");
+
+  const same = trackFailures({ "app:a": bug }, [failure("a", 2)], at(5));
+  assert.equal(same.bugs["app:a"].status, "watching", "more events in the same version keep it in review");
+  assert.deepEqual(same.outbox, []);
+  const summary = digestText(digestBugs({ ...openBug(), "app:b": { ...same.bugs["app:a"], key: "app:b" } }), { now: at(6), quietHours: 48 });
+  assert.match(summary, /1 sin PR, 0 en corrección, 1 en revisión/);
+  assert.match(summary, /en revisión: el Corrector no encontró cambio de código/);
+  assert.ok(resolveQuiet(structuredClone(same.bugs["app:a"]), at(60), 48).length, "it still resolves after the quiet hours");
+
+  const back = trackFailures(same.bugs, [failure("a", 1, "1.5.6 (291)")], at(7));
+  const reopened = back.bugs["app:a"];
+  assert.deepEqual([back.reopened, reopened.status], [["app:a"], "open"]);
+  assert.match(back.outbox[0].text, /El Corrector la había revisado en 1\.5\.5 \(290\) sin encontrar un cambio de código/);
+  reopened.reopenedAt = at(7).toISOString();
+  assert.deepEqual(markReviewed(reopened, verdict, 48), [], "the old conclusion doesn't apply after it reopens");
+
+  const watched = openBug()["app:a"];
+  markReviewed(watched, verdict, 48);
+  syncPrs(watched, [pr(7, "open")], 48);
+  assert.equal(watched.status, "fixing", "a PR linked later still puts it in correction");
 });

@@ -1,11 +1,12 @@
 import { parseArgs } from "node:util";
-import { ACTIVE, markReleased, mergedPr, prKey, pruneResolved, resolveQuiet, syncPrs, trackFailures } from "./bugs.js";
+import { ACTIVE, markReleased, markReviewed, mergedPr, prKey, pruneResolved, resolveQuiet, syncPrs, trackFailures } from "./bugs.js";
 import { versionEvent } from "./crashlytics.js";
 import { normalizeState } from "./detect.js";
 import { buildRevision } from "./event.js";
 import { readJson, writeJson } from "./files.js";
 import { containsChanges, findRepoDir, git, gitOk } from "./repos.js";
 import { fetchPr } from "./reviewer/github.js";
+import { noChangeVerdict } from "./fixer/thread.js";
 import { prUrls } from "./reviewer/pr.js";
 import { slackClient } from "./slack.js";
 
@@ -37,8 +38,7 @@ const slack = slackClient();
 const textOf = (m) => [m.text ?? "", ...(m.attachments ?? []).map((a) => a.from_url ?? "")].join("\n");
 
 /** PRs of the bug's own app repo linked anywhere in its thread, oldest first. */
-async function linkedPrs(bug) {
-  const messages = await slack.replies(bug.thread_ts);
+function linkedPrs(bug, messages) {
   const seen = new Map();
   for (const m of messages) {
     for (const pr of prUrls(textOf(m))) {
@@ -60,10 +60,13 @@ if (!slack) console.warn("Sin SLACK_BOT_TOKEN o SLACK_CHANNEL: no se buscan PR e
 for (const bug of Object.values(bugs)) {
   if (!slack || !ACTIVE.has(bug.status) || !bug.thread_ts || !bug.sourceRepo) continue;
   try {
-    const linked = await linkedPrs(bug);
-    if (!linked.length && !bug.prs.length) continue;
-    prChecks++;
-    outbox.push(...syncPrs(bug, await Promise.all(linked.map(withGithubState)), quietHours));
+    const messages = await slack.replies(bug.thread_ts);
+    const linked = linkedPrs(bug, messages);
+    if (linked.length || bug.prs.length) {
+      prChecks++;
+      outbox.push(...syncPrs(bug, await Promise.all(linked.map(withGithubState)), quietHours));
+    }
+    outbox.push(...markReviewed(bug, noChangeVerdict(messages), quietHours));
   } catch (err) {
     console.warn(`No se pudieron revisar los PR del hilo de ${bug.key}: ${err.message}`);
   }
@@ -150,6 +153,6 @@ writeJson(args.state, state, false);
 const byStatus = Object.values(state.bugs).reduce((acc, b) => ({ ...acc, [b.status]: (acc[b.status] ?? 0) + 1 }), {});
 console.log(
   `Bugs: ${tracked.opened.length} nuevo(s), ${tracked.reopened.length} reabierto(s); ` +
-    `abiertos ${byStatus.open ?? 0}, en corrección ${byStatus.fixing ?? 0}, resueltos ${byStatus.resolved ?? 0}.`
+    `abiertos ${byStatus.open ?? 0}, en corrección ${byStatus.fixing ?? 0}, en revisión ${byStatus.watching ?? 0}, resueltos ${byStatus.resolved ?? 0}.`
 );
 console.log(`Hilos con PR revisados: ${prChecks}. Avisos para publicar en hilos: ${outbox.length}.`);
