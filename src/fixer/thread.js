@@ -85,9 +85,9 @@ export function linkedFixPrs(messages, repo) {
 
 const FIX_ACK = /El \*Corrector\* toma esta falla/;
 const FIX_DONE = /\*(Corrección propuesta|Sin cambios de código|No pude corregir esta falla)\*/;
-const IN_PROGRESS_MS = 2 * 60 * 60 * 1000;
+const IN_PROGRESS_MS = 3 * 60 * 60 * 1000;
 
-/** Whether the Corrector took the bug in the last two hours and hasn't answered yet. */
+/** Whether the Corrector took the bug in the last three hours and hasn't given its final answer yet. */
 export function fixInProgress(messages, now = Date.now()) {
   let since = null;
   for (const m of messages) {

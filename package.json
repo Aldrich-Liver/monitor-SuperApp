@@ -17,6 +17,7 @@
     "reply": "node src/analyst/reply.js",
     "review:request": "node src/reviewer/request.js",
     "review:scan": "node src/reviewer/scan.js",
+    "review:wait": "node src/reviewer/wait.js",
     "review:context": "node src/reviewer/context.js",
     "review:reply": "node src/reviewer/reply.js",
     "pr:opened": "node src/prs/opened.js",

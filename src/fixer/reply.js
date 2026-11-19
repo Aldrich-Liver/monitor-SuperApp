@@ -14,13 +14,13 @@ const { values: args } = parseArgs({
 });
 
 const result = readJson(args.result);
-if (!["fixed", "no-change", "error"].includes(result?.status)) {
-  console.error(`${args.result} debe tener "status": "fixed", "no-change" o "error".`);
+if (!["in-review", "fixed", "no-change", "error"].includes(result?.status)) {
+  console.error(`${args.result} debe tener "status": "in-review", "fixed", "no-change" o "error".`);
   process.exit(1);
 }
 const prs = (result.prs ?? []).map((url) => parsePr(url)).filter(Boolean);
-if (result.status === "fixed" && !prs.length) {
-  console.error(`Con "status": "fixed", ${args.result} debe traer en "prs" los enlaces a los PR.`);
+if (["in-review", "fixed"].includes(result.status) && !prs.length) {
+  console.error(`Con "status": "${result.status}", ${args.result} debe traer en "prs" los enlaces a los PR.`);
   process.exit(1);
 }
 // When fix:context failed there is no context yet; the request itself has the thread.
