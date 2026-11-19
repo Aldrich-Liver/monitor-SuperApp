@@ -15,7 +15,7 @@ const { values: args } = parseArgs({
 const config = readJson(args.config);
 const prevState = normalizeState(readJson(args.state, null));
 const now = new Date();
-const nextState = { v: 2, apps: { ...prevState.apps }, lastError: prevState.lastError, lastCheckedAt: now.toISOString() };
+const nextState = { ...prevState, apps: { ...prevState.apps }, lastCheckedAt: now.toISOString() };
 const findings = [];
 const appStatus = [];
 const errors = [];
@@ -37,6 +37,7 @@ for (const app of config.apps) {
       since,
       reset,
       issues,
+      now,
     });
     nextState.apps[app.appId] = appState;
     findings.push(...appFindings);

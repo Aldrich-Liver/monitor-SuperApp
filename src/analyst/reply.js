@@ -27,12 +27,27 @@ if (!slack && !dryRun) {
   process.exit(1);
 }
 
-const total = details.failures.length;
-for (const [i, f] of details.failures.entries()) {
-  const text = detailText(f, resolved.get(f.key), i + 1, total);
-  if (dryRun) console.log(`--- respuesta ${i + 1}/${total} ---\n${text}\n`);
-  else await slack.post(text, details.thread_ts);
+const threads = new Map();
+for (const f of details.failures) {
+  const ts = f.thread_ts ?? details.thread_ts;
+  threads.set(ts, [...(threads.get(ts) ?? []), f]);
+}
+let failed = 0;
+for (const [threadTs, group] of threads) {
+  for (const [i, f] of group.entries()) {
+    const text = detailText(f, resolved.get(f.key), i + 1, group.length);
+    if (dryRun) console.log(`--- respuesta en el hilo ${threadTs} ---\n${text}\n`);
+    else {
+      await slack.post(text, threadTs).catch((err) => {
+        failed++;
+        console.error(`No se pudo responder en el hilo de ${f.key}: ${err.message}`);
+      });
+    }
+  }
 }
 
 writeJson(args["next-cache"], cache, false);
-console.log(`${dryRun ? "(dry-run) " : ""}${total} respuesta(s) en el hilo. Caché: ${args["next-cache"]}`);
+console.log(
+  `${dryRun ? "(dry-run) " : ""}${details.failures.length - failed} respuesta(s) en ${threads.size} hilo(s). Caché: ${args["next-cache"]}`
+);
+if (failed) process.exit(1);

@@ -10,7 +10,7 @@ import {
   versionChange,
   versionFinding,
 } from "../src/detect.js";
-import { detailText, handoffText, neutralize, shortTitle, summaryText, versionText } from "../src/format.js";
+import { bugReportText, detailText, handoffText, neutralize, shortTitle, versionText } from "../src/format.js";
 
 const app = { name: "Super App Android", appId: "1:1:android:abc", sourceRepo: "sw-crp-super-app-android" };
 const now = new Date("2026-11-18T18:00:00Z");
@@ -34,7 +34,16 @@ function run(prevAppState, issues, version = V) {
 test("first check only records counts", () => {
   const { findings, appState } = run(undefined, [issue("a", 5)]);
   assert.equal(findings.length, 0);
-  assert.deepEqual(appState, { version: V, since: SINCE, counts: { a: 5 } });
+  assert.deepEqual(appState, { version: V, since: SINCE, counts: { a: 5 }, seenAt: null });
+});
+
+test("remembers when the monitor first saw a version, and its build only for that version", () => {
+  const build = { version: V, revision: "abc", checkedAt: SINCE };
+  const prev = { version: V, since: SINCE, counts: {}, seenAt: "2026-11-15T00:00:00.000Z", build };
+  assert.deepEqual(detectApp({ app, prevAppState: prev, version: V, since: SINCE, reset: false, issues: [], now }).appState, { ...prev, counts: {} });
+  const next = detectApp({ app, prevAppState: prev, version: "1.5.6 (291)", since: SINCE, reset: false, issues: [], now }).appState;
+  assert.equal(next.seenAt, now.toISOString());
+  assert.equal(next.build, undefined);
 });
 
 test("reports every issue whose count grew, known or new, sorted by new events", () => {
@@ -99,7 +108,7 @@ test("a new or first-seen version produces the monitor-active message with every
       "Super App iOS 1.5.6 (291): 0 issues con eventos en esta versión",
       "Contacto Logístico Android: sin datos en Crashlytics",
       "Contacto Logístico iOS 1.0.0 (1): 1 issue existente registrado",
-      "Desde ahora reporto cada falla con eventos nuevos en la última versión, sin importar su gravedad.",
+      "Cada falla nueva de la última versión tiene su propio hilo, sin importar su gravedad; las abiertas van en el resumen de cada mañana.",
     ].join("\n")
   );
 });
@@ -118,28 +127,24 @@ test("the same monitor error is reported at most every six hours", () => {
   assert.equal(later.finding.type, "error");
 });
 
-test("summary is one compact line per failure and escapes Slack markup", () => {
-  const prev = { version: V, since: SINCE, counts: { a: 1 } };
-  const { findings } = run(prev, [issue("a", 3), issue("b", 1, { firstSeenVersion: "1.5.5", errorType: "FATAL" })]);
-  const text = summaryText({ checkedAt: now.toISOString(), previousCheckAt: "2026-11-18T17:00:00Z" }, findings);
-  assert.match(text, /2 fallas en Crashlytics/);
-  assert.match(text, /3 eventos nuevos entre 11:00 a\.\s?m\. y 12:00 p\.\s?m\. \(hora CDMX\)/);
-  assert.match(text, /No fatal · `Clasea\.&lt;init&gt;` · 2 eventos · desde 1\.5\.2/);
-  assert.match(text, /Crash · `Claseb\.&lt;init&gt;` · 1 evento · nuevo en esta versión/);
-  assert.match(text, /desde 1\.5\.2/);
-  assert.doesNotMatch(text, /<init>/);
-  assert.doesNotMatch(text, /PRUEBA/);
-  const testText = summaryText({ test: true, checkedAt: now.toISOString(), previousCheckAt: null }, findings);
-  assert.match(testText, /^:test_tube: \*PRUEBA del monitor\*/);
+test("each bug report is its own message, escapes Slack markup and carries its Ref.", () => {
+  const prev = { version: V, since: SINCE, counts: {} };
+  const [a, b] = run(prev, [issue("a", 3), issue("b", 1, { firstSeenVersion: "1.5.5", errorType: "FATAL" })]).findings;
+  const text = bugReportText(a);
+  assert.match(text, /^:rotating_light: \*Falla nueva en Super App Android 1\.5\.5 \(290\)\* · No fatal · `Clasea\.&lt;init&gt;`/);
+  assert.match(text, /3 eventos · 2 usuarios · desde 1\.5\.2/);
+  assert.doesNotMatch(text, /<init>|PRUEBA|Ref\./);
+  assert.match(bugReportText(b), /Crash · `Claseb\.&lt;init&gt;`[\s\S]*1 evento · 2 usuarios · nuevo en esta versión/);
+  assert.match(bugReportText(a, { test: true }), /^:test_tube: \*PRUEBA del monitor\*/);
 
-  const forCursor = summaryText({ checkedAt: now.toISOString() }, findings, { esc: neutralize, ref: "CR-ABC123" });
+  const forCursor = bugReportText(b, { esc: neutralize, ref: "CR-ABC123" });
   assert.match(forCursor, /`Claseb\.‹init›`/);
   assert.match(forCursor, /en el hilo\. · Ref\. CR-ABC123$/);
 });
 
 test("handoff names the analyst or mentions it", () => {
-  assert.match(handoffText({ count: 3, analyzed: 3, mention: null }), /\*Analista Crashlytics\*, revisa 3 fallas/);
-  assert.match(handoffText({ count: 12, analyzed: 8, mention: "<@U123>" }), /^:mag: <@U123>, revisa las 8 fallas con más eventos/);
+  assert.match(handoffText({ mention: null }), /^:mag: \*Analista Crashlytics\*, revisa esta falla/);
+  assert.match(handoffText({ mention: "<@U123>", reopened: true }), /^:mag: <@U123>, revisa otra vez esta falla/);
 });
 
 test("detail reply includes the error, where it happened, the analysis and a link", () => {

@@ -13,7 +13,9 @@ const { values: args } = parseArgs({
 });
 
 const payload = readJson(args.payload);
-if (payload?.source !== "crashlytics-monitor" || !payload.thread_ts || !Array.isArray(payload.failures)) {
+// Each failure carries the thread of its bug; `payload.thread_ts` is the shared thread of older payloads.
+const threadOf = (f) => f.thread_ts ?? payload.thread_ts;
+if (payload?.source !== "crashlytics-monitor" || !Array.isArray(payload.failures) || !payload.failures.every(threadOf)) {
   console.error(`${args.payload} no es un payload válido del monitor.`);
   process.exit(1);
 }
@@ -26,10 +28,10 @@ for (const f of payload.failures) {
     return null;
   });
   const cached = cache[cacheKey(f)] ?? null;
-  failures.push({ ...f, sampleEvent: event ? summarizeEvent(event) : null, analysis: cached, needsAnalysis: !cached });
+  failures.push({ ...f, thread_ts: threadOf(f), sampleEvent: event ? summarizeEvent(event) : null, analysis: cached, needsAnalysis: !cached });
 }
 
-writeJson(args.out, { channel: payload.channel, thread_ts: payload.thread_ts, failures });
+writeJson(args.out, { channel: payload.channel, failures });
 console.log(`${failures.length} falla(s); requieren análisis: ${failures.filter((f) => f.needsAnalysis).length}.`);
 for (const f of failures.filter((x) => x.needsAnalysis)) {
   console.log(`- ${f.key} · ${f.app} ${f.version} · ${f.sourceRepo ?? "sin repo"} · commit ${f.sampleEvent?.buildRevision ?? "?"}`);

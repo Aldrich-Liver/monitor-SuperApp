@@ -38,5 +38,7 @@ export async function fetchPr({ owner, repo, number }) {
     base: p.base?.ref ?? null,
     headBranch: p.head?.ref ?? null,
     headRepo: p.head?.repo?.full_name ?? null,
+    mergeCommit: p.merged ? p.merge_commit_sha ?? null : null,
+    mergedAt: p.merged_at ?? null,
   };
 }

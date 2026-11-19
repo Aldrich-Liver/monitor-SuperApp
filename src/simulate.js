@@ -56,4 +56,6 @@ const result = {
 writeJson(args.out, result);
 const [f] = result.findings;
 console.log(`Prueba: ${f.app} ${f.version} · ${f.issue.title} · ${f.newEvents} eventos desde ${since}`);
-console.log(`Resultado: ${args.out}. Publica con: npm run notify -- --result ${args.out}`);
+const flags = `--result ${args.out} --state .monitor/test-state.json`;
+console.log(`Resultado: ${args.out}. Publica con:`);
+console.log(`  npm run bugs -- ${flags} && npm run render -- ${flags} --post-with-bot && npm run notify -- ${flags}`);

@@ -1,36 +1,53 @@
 # Monitor de Crashlytics
 
-Revisa cada hora la última versión de Super App y Contacto Logístico (Android e iOS) en el proyecto de Firebase `crp-dev-dig-superapp`. Si hay fallas con eventos nuevos, ya sean crashes, no fatales o ANR, nuevas o conocidas, las reporta en Slack (`#team-mobile`). Si no hay fallas, no publica nada.
+Revisa cada hora la última versión de Super App y Contacto Logístico (Android e iOS) en el proyecto de Firebase `crp-dev-dig-superapp` y lleva cada falla (crash, no fatal o ANR) en su propio hilo de `#team-mobile`, desde que aparece hasta que se resuelve. Si no hay nada nuevo, no publica nada.
 
 Funciona con tres automatizaciones de Cursor en el environment **Super App**:
 
-1. **Monitor Crashlytics**, programada cada hora. Ejecuta `npm run check` y `npm run render`, y publica el reporte (un mensaje corto con la lista de fallas) como Cursor, con la herramienta Send to Slack. Luego `npm run notify` encuentra ese reporte en el canal por su `Ref. CR-…`, menciona al Analista en el hilo con el bot del monitor y activa al Analista por webhook con los datos de las fallas.
-2. **Analista Crashlytics**, activada por webhook. Ejecuta `npm run details`, lee el código del commit con el que se compiló la versión y escribe la causa y la solución propuesta en palabras simples. Con `npm run reply` responde en el hilo una vez por falla.
+1. **Monitor Crashlytics**, programada cada hora. `npm run check` lee Crashlytics, `npm run bugs` lleva el seguimiento de cada falla y `npm run render` escribe un mensaje por cada falla nueva, que Cursor publica con la herramienta Send to Slack. Luego `npm run notify` encuentra cada mensaje por su `Ref. CR-…`, abre su hilo, arroba al Analista y lo activa por webhook, publica los avisos de seguimiento y, cada mañana, el resumen de las fallas abiertas.
+2. **Analista Crashlytics**, activada por webhook. Ejecuta `npm run details`, lee el código del commit con el que se compiló la versión y escribe la causa y la solución propuesta en palabras simples. Con `npm run reply` responde en el hilo de cada falla.
 3. **Revisor de PRs**, activada por webhook. Revisa cualquier PR de las apps (corrección de una falla, función nueva, mejora, versión…) con los lineamientos, skills y documentos del equipo que viven en el repo, da el visto bueno o pide solo los cambios necesarios, comenta en el PR de GitHub y responde en el hilo.
 
 ```
-:rotating_light: 1 falla en Crashlytics · 5 eventos nuevos entre 11:04 a.m. y 12:04 p.m. (hora CDMX)
-• Super App Android 1.5.5 (290) · No fatal · ArranqueAnfitrion$PasoArranqueExcedido.<init> · 5 eventos · desde 1.5.2
-:thread: Detalle y solución propuesta en el hilo. · Ref. CR-4B7DFB
-   └ :mag: @Analista Crashlytics, revisa 1 falla contra el código del release y responde en este hilo…
-   └ 1/1 · Super App Android 1.5.5 (290) · No fatal
-     Error: ArranqueAnfitrion$PasoArranqueExcedido.<init>
-     > rt - El paso de arranque 'remote_config' no terminó en 15s
+:rotating_light: Falla nueva en Super App Android 1.5.5 (290) · No fatal · ArranqueAnfitrion$PasoArranqueExcedido.<init>
+> rt - El paso de arranque 'remote_config' no terminó en 15s
+5 eventos · 16 usuarios · desde 1.5.2
+:thread: Detalle, solución propuesta y seguimiento en el hilo. · Ref. CR-4B7DFB
+   └ :mag: @Analista Crashlytics, revisa esta falla contra el código del release y responde en este hilo…
+   └ Super App Android 1.5.5 (290) · No fatal
      Dónde: ArranqueAnfitrion.protegido-dWUq8MI (ArranqueAnfitrion.kt:55)
-     Eventos: 5 nuevos · 17 en esta versión · 16 usuarios · desde 1.5.2
      Qué está pasando: Al abrir la app, la configuración remota tarda más de 15 s…
      Solución propuesta: …
-     Ver en Crashlytics
+   └ @dev: Lo tomo, aquí el PR https://github.com/…/pull/14 @Cursor revisa este PR
+   └ :hammer_and_wrench: En corrección con el PR #14. Aviso aquí cuando salga en una versión…
+   └ :white_check_mark: Revisión del PR #14 …
+   └ :twisted_rightwards_arrows: El PR #14 ya está fusionado. Aviso aquí cuando salga en una versión.
+   └ :package: 1.5.6 (291) ya incluye el PR #14. Si no hay eventos de esta falla hasta el 22 nov, 10:00 (hora CDMX), la doy por resuelta.
+   └ :white_check_mark: Resuelto · Super App Android · ArranqueAnfitrion$PasoArranqueExcedido.<init>   ← también aparece en el canal
 ```
 
 ## Cómo decide qué reportar
 
 - **Última versión:** la versión semántica más alta con datos en los últimos 30 días (`releaseLookbackDays`).
-- **Falla:** cualquier issue de la última versión cuyo número de eventos subió desde la revisión anterior. Los eventos se cuentan desde un instante fijo por versión, así que los que Crashlytics procesa con retraso se reportan en la siguiente hora.
-- **Versión nueva:** se reportan todos sus issues con eventos.
+- **Falla:** cualquier issue de la última versión cuyo número de eventos subió desde la revisión anterior. Los eventos se cuentan desde un instante fijo por versión, así que los que Crashlytics procesa con retraso se cuentan en la siguiente hora.
+- **Versión nueva:** cuentan todos sus issues con eventos.
 - **Primera revisión**, o cuando se reinicia el conteo tras 85 días en la misma versión: solo registra los contadores y no publica.
 - **Errores del monitor**, por ejemplo credenciales vencidas: los reporta en el canal, pero el mismo error no se repite antes de 6 horas.
-- El Analista revisa como máximo las 8 fallas con más eventos (`maxAnalyzedFailures`). Guarda cada análisis por issue y versión, y si la misma falla vuelve a aparecer lo reutiliza en vez de volver a leer el código.
+- El Analista revisa como máximo 8 fallas por hora, las de más eventos (`maxAnalyzedFailures`); las demás pasan a la hora siguiente. Guarda cada análisis por issue y versión, y si la misma falla vuelve a aparecer lo reutiliza en vez de volver a leer el código.
+
+## Un hilo por falla
+
+Cada issue de Crashlytics es una falla con su propio hilo, y todo lo que pasa con ella va ahí. El canal principal solo recibe el mensaje que abre cada falla, el resumen de la mañana y, como respuestas del hilo que también se muestran en el canal (sin mensaje nuevo), los avisos de *Resuelto* y *Volvió a aparecer*.
+
+| Estado | Cuándo |
+|---|---|
+| Abierta | La primera vez que el issue tiene eventos. Si sigue con eventos, solo suma al conteo: no publica de nuevo. |
+| En corrección | Alguien pegó en el hilo un PR del repo de esa app. Se lee su estado en GitHub cada hora: si se fusiona lo avisa, y si se cierra sin fusionarse la falla vuelve a abierta. |
+| En observación | Salió una versión que incluye el PR fusionado. Se confirma con el commit con el que se compiló la versión (viene en sus eventos de Crashlytics) y `git merge-base --is-ancestor`; si ese commit no está disponible, cuenta si la versión apareció después de la fusión. |
+| Resuelta | 48 h sin eventos (`resolveAfterHours`), contadas desde la versión con la corrección si la hay. Puede resolverse sin PR si deja de ocurrir sola. |
+| Reabierta | Tuvo eventos después de resuelta, o en la versión que traía la corrección. Vuelve al mismo hilo y se le pide otra vez el detalle al Analista. |
+
+**Resumen de la mañana:** la primera revisión desde las 9:00 hora CDMX (`digestHour`) publica en el canal la lista de fallas abiertas y en corrección, con sus eventos del último día y el enlace a cada hilo. Si no hay fallas abiertas no publica nada. Las fallas resueltas se olvidan después de 30 días; si vuelven, abren un hilo nuevo.
 
 ## Revisor de PRs
 
@@ -85,7 +102,7 @@ Node.js 20 o superior. No hay dependencias que instalar.
 | `FIREBASE_TOKEN` | Token de `npx firebase-tools login:ci`, con los permisos de quien lo generó. |
 | `CRASHLYTICS_SA_KEY` / `GOOGLE_APPLICATION_CREDENTIALS` | Alternativa: una cuenta de servicio con el rol Firebase Crashlytics Viewer. |
 | `GOOGLE_OAUTH_ACCESS_TOKEN` | Alternativa para pruebas locales: un token de acceso OAuth vigente. |
-| `SLACK_BOT_TOKEN` | Token `xoxb-…` del bot del monitor, el que abre el hilo. Necesita los permisos `chat:write` y `groups:history` (para encontrar el reporte de Cursor en un canal privado) y estar invitado al canal. |
+| `SLACK_BOT_TOKEN` | Token `xoxb-…` del bot del monitor, el que abre los hilos y publica los avisos y el resumen. Necesita los permisos `chat:write` y `groups:history` (para encontrar los mensajes de Cursor y leer los PR de los hilos en un canal privado) y estar invitado al canal. |
 | `SLACK_CHANNEL` | ID del canal (`C…`) de `#team-mobile`. |
 | `ANALYST_WEBHOOK_URL`, `ANALYST_WEBHOOK_KEY` | URL y llave del webhook de la automatización Analista Crashlytics. |
 | `SLACK_ANALYST_BOT_TOKEN` | Opcional: token del bot del Analista. Con él, el hilo arroba al Analista y sus respuestas salen con su propio nombre. Sin él, el hilo lo nombra en negritas y responde el bot del monitor. |
@@ -100,14 +117,15 @@ Node.js 20 o superior. No hay dependencias que instalar.
 export FIREBASE_TOKEN=...                    # o GOOGLE_OAUTH_ACCESS_TOKEN
 npm run check                                # escribe .monitor/result.json y .monitor/state.next.json
 cp .monitor/state.next.json .monitor/state.json   # lo que hace la automatización con su memoria
-npm run check                                # una hora después: reporta lo que subió
-npm run render                               # escribe el reporte para Send to Slack en .monitor/messages.json
-npm run notify -- --dry-run                  # muestra el hilo y el payload sin enviarlos
+npm run check                                # una hora después: cuenta lo que subió
+npm run bugs                                 # actualiza las fallas en .monitor/state.next.json (abre, reabre, PR, resuelve)
+npm run render                               # escribe un mensaje por falla nueva para Send to Slack en .monitor/messages.json
+npm run notify -- --dry-run                  # muestra hilos, avisos, resumen y payload sin enviarlos
 
 # Prueba completa sin Send to Slack: publica una falla real marcada como PRUEBA con el bot del monitor
 npm run simulate
-npm run render -- --result .monitor/test-result.json --post-with-bot
-npm run notify -- --result .monitor/test-result.json
+T="--result .monitor/test-result.json --state .monitor/test-state.json"
+npm run bugs -- $T && npm run render -- $T --post-with-bot && npm run notify -- $T
 
 # Analista: el payload que imprimió notify va en .analyst/payload.json
 npm run details                              # escribe .analyst/details.json
@@ -128,7 +146,7 @@ npm test
 
 ### 1. Bot de Slack
 
-El reporte lo publica Cursor, pero la herramienta Send to Slack no devuelve el identificador del mensaje y por eso no puede responder en su hilo. El bot del monitor busca el reporte en el canal por su `Ref. CR-…` y abre el hilo.
+El mensaje de cada falla nueva lo publica Cursor, pero la herramienta Send to Slack no devuelve el identificador del mensaje y por eso no puede responder en su hilo. El bot del monitor busca cada mensaje en el canal por su `Ref. CR-…`, abre su hilo y publica ahí todo el seguimiento; si no lo encuentra, publica él mismo el mensaje de la falla.
 
 1. En [api.slack.com/apps](https://api.slack.com/apps), elige **Create New App > From a manifest**, selecciona el workspace y pega [`slack/monitor-manifest.json`](slack/monitor-manifest.json). Ya trae el nombre y los permisos: `chat:write` para escribir y `groups:history`/`channels:history` para encontrar el reporte.
 2. Revisa el resumen y haz clic en **Create**.

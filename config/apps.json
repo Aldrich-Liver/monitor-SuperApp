@@ -4,6 +4,8 @@
   "initialLookbackDays": 7,
   "releaseLookbackDays": 30,
   "maxAnalyzedFailures": 8,
+  "resolveAfterHours": 48,
+  "digestHour": 9,
   "apps": [
     {
       "name": "Super App Android",

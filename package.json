@@ -1,14 +1,15 @@
 {
   "name": "crashlytics-monitor",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Reporta cada hora las fallas de Crashlytics de la última versión en Slack, con análisis en el hilo.",
+  "description": "Reporta cada falla nueva de Crashlytics en su propio hilo de Slack y la sigue hasta que se resuelve.",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "check": "node src/check.js",
+    "bugs": "node src/lifecycle.js",
     "render": "node src/render.js",
     "notify": "node src/notify.js",
     "simulate": "node src/simulate.js",

@@ -19,7 +19,7 @@ function pickTrace(event) {
   return null;
 }
 
-function buildRevision(buildStamp) {
+export function buildRevision(buildStamp) {
   return buildStamp?.match(/revision:\s*"([0-9a-f]{7,40})"/)?.[1] ?? null;
 }
 

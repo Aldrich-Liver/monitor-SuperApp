@@ -1,6 +1,5 @@
 const TZ = "America/Mexico_City";
 const MESSAGE_LIMIT = 3500;
-const MAX_LISTED = 10;
 const ERROR_TYPE_LABEL = {
   FATAL: "Crash",
   NON_FATAL: "No fatal",
@@ -21,12 +20,6 @@ export function neutralize(text = "") {
 
 function truncate(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
-function clock(iso, reference) {
-  const time = new Date(iso).toLocaleTimeString("es-MX", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
-  const day = (d) => new Date(d).toLocaleDateString("es-MX", { timeZone: TZ, day: "numeric", month: "short" });
-  return reference && day(iso) !== day(reference) ? `el ${day(iso)} a las ${time}` : time;
 }
 
 /** `mx.liverpool.app.Clase$Interna.<init>` -> `Clase$Interna.<init>`, readable in a one-line summary. */
@@ -63,41 +56,102 @@ function plural(n, one, many) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** `ref` is how the monitor bot finds this message in the channel when Cursor posts it. */
-export function summaryText(result, failures, { esc = escape, ref } = {}) {
-  const window = result.previousCheckAt
-    ? `entre ${clock(result.previousCheckAt, result.checkedAt)} y ${clock(result.checkedAt)} (hora CDMX)`
-    : `hasta ${clock(result.checkedAt)} (hora CDMX)`;
-  const totalEvents = failures.reduce((n, f) => n + f.newEvents, 0);
-  const lines = [
-    `:rotating_light: *${plural(failures.length, "falla", "fallas")} en Crashlytics* · ${plural(totalEvents, "evento nuevo", "eventos nuevos")} ${window}`,
-  ];
-  if (result.test && result.testLabel !== false) lines.unshift(":test_tube: *PRUEBA del monitor*: falla real, pero este mensaje no es una alerta nueva.");
-  for (const f of failures.slice(0, MAX_LISTED)) {
-    lines.push(
-      `• *${esc(f.app)} ${esc(f.version)}* · ${ERROR_TYPE_LABEL[f.issue.errorType] ?? f.issue.errorType} · ` +
-        `\`${esc(shortTitle(f.issue.title))}\` · ${plural(f.newEvents, "evento", "eventos")} · ${sinceLabel(f)}`
-    );
-  }
-  if (failures.length > MAX_LISTED) lines.push(`_y ${plural(failures.length - MAX_LISTED, "falla más", "fallas más")}_`);
-  lines.push(`:thread: Detalle y solución propuesta en el hilo.${ref ? ` · Ref. ${ref}` : ""}`);
+const errorLabel = (issue) => ERROR_TYPE_LABEL[issue.errorType] ?? issue.errorType;
+
+/**
+ * The message that opens a bug's thread; everything about the bug afterwards goes in that thread.
+ * `ref` is how the monitor bot finds this message in the channel when Cursor posts it.
+ */
+export function bugReportText(f, { esc = escape, ref, test = false, testLabel = true } = {}) {
+  const lines = [];
+  if (test && testLabel) lines.push(":test_tube: *PRUEBA del monitor*: falla real, pero este mensaje no es una alerta nueva.");
+  lines.push(`:rotating_light: *Falla nueva en ${esc(f.app)} ${esc(f.version)}* · ${errorLabel(f.issue)} · \`${esc(shortTitle(f.issue.title))}\``);
+  if (f.issue.subtitle) lines.push(`> ${esc(truncate(f.issue.subtitle.replace(/\s+/g, " "), 200))}`);
+  lines.push(`${plural(f.newEvents, "evento", "eventos")} · ${plural(f.impactedUsers ?? 0, "usuario", "usuarios")} · ${sinceLabel(f)}`);
+  lines.push(`:thread: Detalle, solución propuesta y seguimiento en el hilo.${ref ? ` · Ref. ${ref}` : ""}`);
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }
 
-export function handoffText({ count, analyzed, mention }) {
+export function handoffText({ mention, reopened = false }) {
   const who = mention ? mention : "*Analista Crashlytics*";
-  const scope = analyzed < count ? `las ${analyzed} fallas con más eventos` : plural(count, "falla", "fallas");
-  return `:mag: ${who}, revisa ${scope} contra el código del release y responde en este hilo con el detalle y una solución propuesta.`;
+  return `:mag: ${who}, revisa ${reopened ? "otra vez " : ""}esta falla contra el código del release y responde en este hilo con el detalle y una solución propuesta.`;
+}
+
+const prRef = (pr) => (pr?.url ? `<${pr.url}|PR #${pr.number}>` : "el PR");
+
+function day(iso) {
+  return new Date(iso).toLocaleDateString("es-MX", { timeZone: TZ, day: "numeric", month: "short" });
+}
+
+function dayTime(date) {
+  return `${day(date)}, ${new Date(date).toLocaleTimeString("es-MX", { timeZone: TZ, hour: "numeric", minute: "2-digit" })}`;
+}
+
+export function bugFixingText(pr, quietHours) {
+  const merged = pr.state === "merged" ? " Ya está fusionado." : "";
+  return `:hammer_and_wrench: *En corrección* con el ${prRef(pr)}.${merged} Aviso aquí cuando salga en una versión; tras ${quietHours} h sin eventos la doy por resuelta.`;
+}
+
+export function bugMergedText(pr) {
+  return `:twisted_rightwards_arrows: El ${prRef(pr)} ya está fusionado. Aviso aquí cuando salga en una versión.`;
+}
+
+export function bugPrClosedText(pr) {
+  return `:leftwards_arrow_with_hook: El ${prRef(pr)} se cerró sin fusionarse: la falla vuelve a quedar abierta.`;
+}
+
+export function bugReleasedText(pr, version, until, method) {
+  const how = method === "date" ? " (por fecha: la versión no trae su commit)" : "";
+  return `:package: *${escape(version)}* ya incluye el ${prRef(pr)}${how}. Si no hay eventos de esta falla hasta el ${dayTime(until)} (hora CDMX), la doy por resuelta.`;
+}
+
+export function bugResolvedText(bug, { pr, version, released, quietHours }) {
+  const head = `:white_check_mark: *Resuelto* · ${escape(bug.app)} · \`${escape(shortTitle(bug.issue.title))}\``;
+  if (released) return `${head}\n${quietHours} h sin eventos en ${escape(version)}, que incluye el ${prRef(pr)}.`;
+  const note = pr ? ` El ${prRef(pr)} todavía no sale en una versión.` : " Nadie ligó un PR: dejó de ocurrir sola.";
+  return `${head}\n${quietHours} h sin eventos en ${escape(version)}.${note}`;
+}
+
+export function bugReopenedText(bug, f, { resolvedAt, pr, fixVersion } = {}) {
+  const head = `:warning: *Volvió a aparecer* · ${escape(f.app)} ${escape(f.version)} · \`${escape(shortTitle(f.issue.title))}\` · ${plural(f.newEvents, "evento", "eventos")}`;
+  if (fixVersion) return `${head}\nYa salió el ${prRef(pr)} en ${escape(fixVersion)} y no la resolvió: vuelve a quedar abierta.`;
+  return `${head}\nSe había dado por resuelta el ${day(resolvedAt)}: vuelve a quedar abierta.`;
+}
+
+function digestStatus(b, { permalink }) {
+  const thread = permalink ? ` · <${permalink}|Ver hilo>` : "";
+  if (b.status === "open") return `sin PR${thread}`;
+  const pr = b.fix ? b.prs.find((p) => p.number === b.fix.pr) : b.prs.find((p) => p.state !== "closed");
+  if (b.fix) return `${prRef(pr)} en ${escape(b.fix.version)}, en observación${thread}`;
+  const state = pr?.state === "merged" ? "fusionado, espera versión" : "en revisión";
+  return `en corrección con el ${prRef(pr)} (${state})${thread}`;
+}
+
+/** The morning reminder of open bugs. `permalinks` maps a bug key to the link of its thread. */
+export function digestText(bugs, { now, quietHours, permalinks = {} }) {
+  const open = bugs.filter((b) => b.status === "open").length;
+  const lines = [
+    `:clipboard: *Fallas abiertas de Crashlytics* · ${bugs.length} al ${day(now)} · ${open} sin PR, ${bugs.length - open} en corrección`,
+  ];
+  for (const b of bugs.slice(0, 15)) {
+    lines.push(
+      `• *${escape(b.app)} ${escape(b.lastVersion)}* · ${errorLabel(b.issue)} · \`${escape(shortTitle(b.issue.title))}\` · ` +
+        `${plural(b.sinceDigest, "evento", "eventos")} en 24 h · desde el ${day(b.openedAt)} · ${digestStatus(b, { permalink: permalinks[b.key] })}`
+    );
+  }
+  if (bugs.length > 15) lines.push(`_y ${plural(bugs.length - 15, "falla más", "fallas más")}_`);
+  lines.push(`_Para tomar una, pega el PR en su hilo y pide la revisión a @Cursor. Se dan por resueltas tras ${quietHours} h sin eventos._`);
+  return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }
 
 export function analystUnavailableText(reason) {
   return `:warning: No se pudo activar al Analista Crashlytics: ${escape(reason)}`;
 }
 
-export function detailText(d, analysis, index, total) {
-  const ev = d.sampleEvent;
+export function detailText(d, analysis, index = 1, total = 1) {
+  const position = total > 1 ? `${index}/${total} · ` : "";
   const lines = [
-    `*${index}/${total} · ${escape(d.app)} ${escape(d.version)}* · ${ERROR_TYPE_LABEL[d.issue.errorType] ?? d.issue.errorType}`,
+    `*${position}${escape(d.app)} ${escape(d.version)}* · ${ERROR_TYPE_LABEL[d.issue.errorType] ?? d.issue.errorType}`,
     `*Error:* \`${escape(shortTitle(d.issue.title))}\``,
   ];
   if (d.issue.subtitle) lines.push(`> ${escape(truncate(d.issue.subtitle, 300))}`);
@@ -134,16 +188,12 @@ export function versionText(finding, { esc = escape } = {}) {
       lines.push(`${esc(s.app)} ${esc(s.latestVersion)}: ${plural(s.issues, "issue", "issues")} con eventos en esta versión`);
     }
   }
-  lines.push("Desde ahora reporto cada falla con eventos nuevos en la última versión, sin importar su gravedad.");
+  lines.push("Cada falla nueva de la última versión tiene su propio hilo, sin importar su gravedad; las abiertas van en el resumen de cada mañana.");
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }
 
 export function errorText(message, { esc = escape } = {}) {
   return `:x: *El monitor de Crashlytics no pudo revisar*\n\`\`\`${esc(truncate(message, 2500))}\`\`\``;
-}
-
-export function threadHeaderText(ref) {
-  return `:thread: Detalle de la alerta de Crashlytics Ref. ${ref}`;
 }
 
 const MAX_REVIEW_ITEMS = 6;

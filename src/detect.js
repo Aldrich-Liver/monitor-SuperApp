@@ -3,12 +3,21 @@ const ERROR_REPEAT_MS = 6 * 60 * 60 * 1000;
 const MAX_WINDOW_DAYS = 85;
 
 export function emptyState() {
-  return { v: 2, apps: {}, lastError: null, lastCheckedAt: null };
+  return { v: 2, apps: {}, lastError: null, lastCheckedAt: null, bugs: {}, outbox: [], digestOn: null };
 }
 
+/** `bugs`, `outbox` and `digestOn` came after v2 started; a v2 state without them is still valid. */
 export function normalizeState(raw) {
   if (!raw || typeof raw !== "object" || raw.v !== 2 || typeof raw.apps !== "object") return emptyState();
-  return { v: 2, apps: raw.apps ?? {}, lastError: raw.lastError ?? null, lastCheckedAt: raw.lastCheckedAt ?? null };
+  return {
+    v: 2,
+    apps: raw.apps ?? {},
+    lastError: raw.lastError ?? null,
+    lastCheckedAt: raw.lastCheckedAt ?? null,
+    bugs: raw.bugs && typeof raw.bugs === "object" ? raw.bugs : {},
+    outbox: Array.isArray(raw.outbox) ? raw.outbox : [],
+    digestOn: raw.digestOn ?? null,
+  };
 }
 
 /**
@@ -30,9 +39,10 @@ export function countingSince(prevAppState, latestVersion, now, initialLookbackD
  * known or not. The first check of an app only records counts, so enabling the monitor does not
  * report the whole history as if it had just happened.
  */
-export function detectApp({ app, prevAppState, version, since, reset, issues }) {
+export function detectApp({ app, prevAppState, version, since, reset, issues, now = new Date() }) {
   const firstCheck = !prevAppState;
-  const prevCounts = prevAppState?.version === version ? prevAppState.counts ?? {} : {};
+  const sameVersion = prevAppState?.version === version;
+  const prevCounts = sameVersion ? prevAppState.counts ?? {} : {};
   const counts = {};
   const findings = [];
 
@@ -63,7 +73,10 @@ export function detectApp({ app, prevAppState, version, since, reset, issues }) 
   }
 
   findings.sort((a, b) => b.newEvents - a.newEvents);
-  return { findings, appState: { version, since, counts } };
+  // When the monitor first saw this version; null for versions it found already out when it started.
+  const seenAt = sameVersion ? prevAppState.seenAt ?? null : firstCheck ? null : now.toISOString();
+  const build = sameVersion ? prevAppState.build ?? null : null;
+  return { findings, appState: { version, since, counts, seenAt, ...(build ? { build } : {}) } };
 }
 
 /** How an app's latest version moved since the previous check: "first" (no previous data), "new" or null. */

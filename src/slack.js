@@ -55,7 +55,8 @@ export function slackClient({ token, channel } = {}) {
       const found = body.messages.find((m) => JSON.stringify(m).includes(needle));
       return found ? { ts: found.ts, channel } : null;
     },
-    async post(text, threadTs) {
+    /** `broadcast` also shows a thread reply in the channel ("Also send to channel"), without a new message. */
+    async post(text, threadTs, { broadcast = false } = {}) {
       const res = await fetch("https://slack.com/api/chat.postMessage", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json; charset=utf-8" },
@@ -64,12 +65,16 @@ export function slackClient({ token, channel } = {}) {
           text,
           unfurl_links: false,
           unfurl_media: false,
-          ...(threadTs ? { thread_ts: threadTs } : {}),
+          ...(threadTs ? { thread_ts: threadTs, ...(broadcast ? { reply_broadcast: true } : {}) } : {}),
         }),
       });
       const body = await res.json();
       if (!body.ok) throw new Error(`Slack chat.postMessage: ${body.error}`);
       return { ts: body.ts, channel: body.channel };
+    },
+    async permalink(ts) {
+      const body = await read("chat.getPermalink", { message_ts: ts });
+      return body.permalink;
     },
   };
 }

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { readJson, writeJson } from "../files.js";
+import { findRepoDir, git, gitOk } from "../repos.js";
 import { fetchPr } from "./github.js";
 import { applicableGuidelines, guidelineKind, needsMeta, ruleMeta } from "./guidelines.js";
 import { appForRepo, prUrls, twinRepo } from "./pr.js";
@@ -29,23 +30,10 @@ if (!appForRepo(config, repo)) {
   process.exit(1);
 }
 
-const git = (dir, gitArgs, opts = {}) =>
-  execFileSync("git", ["-C", dir, ...gitArgs], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"], ...opts }).trim();
-const gitOk = (dir, gitArgs) => {
-  try {
-    git(dir, gitArgs);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 /** The app clone next to the monitor in the Super App environment; cloned on the spot if it is missing. */
 function repoDir(name, { clone = true } = {}) {
-  for (const dir of [resolve(args["repos-dir"], name), join("/agent/repos", name), join("/workspace", name)]) {
-    if (existsSync(join(dir, ".git"))) return dir;
-  }
-  if (!clone) return null;
+  const found = findRepoDir(name, args["repos-dir"]);
+  if (found || !clone) return found;
   const dir = resolve(".reviewer/repos", name);
   if (!existsSync(join(dir, ".git"))) {
     mkdirSync(dirname(dir), { recursive: true });
