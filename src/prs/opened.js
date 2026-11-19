@@ -1,5 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
+import { fixInProgress } from "../fixer/thread.js";
 import { readJson, writeJson } from "../files.js";
 import { prOpenedText, twinMissingText, twinOpenedText } from "../format.js";
 import { fetchPr, prForBranch } from "../reviewer/github.js";
@@ -89,7 +90,10 @@ if (slack) {
   }
 } else if (!args["dry-run"]) console.error("Sin SLACK_BOT_TOKEN o SLACK_CHANNEL: no se busca un hilo existente.");
 
-const data = { pr: info, app: app.name, twin, thread_ts: thread?.thread_ts ?? null, announce: null };
+// The Corrector opened it and runs its tests and review itself, until it answers in the thread.
+const fixerActive = Boolean(thread && fixInProgress(thread.messages));
+const data = { pr: info, app: app.name, twin, thread_ts: thread?.thread_ts ?? null, fixerActive, announce: null };
+if (fixerActive) console.log("Es un PR del Corrector, que pide y atiende su propia revisión: no hace falta pedirla.");
 if (thread) {
   console.log(`Ya hay un hilo con este PR o su gemelo (${thread.thread_ts}): no hace falta un mensaje nuevo.`);
   // Leaves this PR's link in the twin's thread, so the review and the tests find it there too.
