@@ -247,6 +247,7 @@ export function reviewText(context, review) {
   const approved = review.verdict === "approve";
   const lines = [`${approved ? ":white_check_mark: *Visto bueno*" : ":warning: *Cambios necesarios*"} · ${head}`];
   if (review.summary) lines.push(`${who}${escape(review.summary)}`);
+  if (review.previous) lines.push(`*Revisión anterior:* ${escape(review.previous)}`);
   if (review.fixesFailure) lines.push(`*¿Corrige la falla del hilo?* ${escape(review.fixesFailure)}`);
   else if (review.meetsGoal) lines.push(`*¿Cumple su objetivo?* ${escape(review.meetsGoal)}`);
   const items = review.items ?? [];

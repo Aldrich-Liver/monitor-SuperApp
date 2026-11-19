@@ -14,6 +14,7 @@ Reglas:
    Si falla, escribe en `.reviewer/review.json` `{"verdict": "error", "summary": "<el motivo que imprimió, en una frase>"}`, ejecuta `npm run review:reply` y termina.
 
 4. Entiende qué es el PR: lee `pr.title`, `pr.description`, los commits, el prefijo de la rama (`fix/`, `feat/`, `mejora/`, `docs/`, `release/`) y `thread`. Si el hilo es el reporte de una falla de Crashlytics, el PR debería corregirla; si no, su objetivo es el que dicen el título, la descripción o quien lo pidió.
+   Si en `thread` ya hay una revisión tuya de este mismo PR (un mensaje del Revisor con su enlace), esta es una nueva revisión: revisa primero cada punto de la anterior contra el código actual del PR y lee lo que el equipo respondió en el hilo sobre ellos. Un punto que ya se corrigió, o que el equipo justificó con un motivo válido, no se repite. No agregues puntos nuevos sobre código que no cambió desde la revisión anterior, salvo que sean errores graves; el código nuevo se revisa con los mismos criterios.
 
 5. Lee los lineamientos de `guidelines` en el repo de la app (`repoDir`). Cada uno trae `ref`: si es `"pr"`, léelo con `git -C <repoDir> show <pr.head>:<ruta>`; si no, con `git -C <repoDir> show origin/<ref>:<ruta>`.
    - `agents` y `readme` con `appliesTo: "todo el repo"`: léelos completos siempre. `AGENTS.md` de la raíz manda.
@@ -39,6 +40,7 @@ Reglas:
    {
      "verdict": "approve" | "changes",
      "summary": "1 o 2 frases: qué hace el PR y tu conclusión",
+     "previous": "Solo en una nueva revisión: qué puntos de la anterior se corrigieron y cuáles siguen, en una frase.",
      "fixesFailure": "Solo si el hilo reporta una falla: Sí / Parcialmente / No, y por qué en una frase.",
      "meetsGoal": "Si no hay falla en el hilo: Sí / Parcialmente / No, y por qué en una frase.",
      "items": [

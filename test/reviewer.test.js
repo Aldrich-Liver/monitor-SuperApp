@@ -198,6 +198,10 @@ test("formats the verdict for the thread", () => {
   assert.doesNotMatch(ok, /Cumple su objetivo/);
   assert.match(ok, /La revisión también quedó en el PR de GitHub/);
   assert.match(reviewText(context, { verdict: "approve", meetsGoal: "Sí, agrega la agenda." }), /¿Cumple su objetivo\?\* Sí, agrega la agenda\./);
+  assert.match(
+    reviewText(context, { verdict: "approve", summary: "Listo.", previous: "Los 2 puntos se corrigieron.", fixesFailure: "Sí." }),
+    /Listo\.\n\*Revisión anterior:\* Los 2 puntos se corrigieron\.\n\*¿Corrige la falla del hilo\?\*/
+  );
 
   const items = Array.from({ length: 8 }, (_, i) => ({ file: "A.swift", line: i + 1, problem: `p${i}`, suggestion: "s", guideline: "AGENTS.md §2.1" }));
   const changes = reviewText(context, { verdict: "changes", summary: "Falta el gemelo.", items });
