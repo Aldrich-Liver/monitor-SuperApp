@@ -5,7 +5,7 @@ export default defineAgent({
   description: "Recibe al instante las menciones a los bots de #team-mobile y activa la automatización que corresponde.",
   tools: [],
   hosting: {
-    egressDomains: ["api.cursor.com"],
+    egressDomains: ["api2.cursor.sh"],
     secretNames: [
       "REVISOR_SLACK_BOT_TOKEN",
       "REVISOR_SLACK_APP_TOKEN",
