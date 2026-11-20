@@ -1,5 +1,5 @@
 import { mentionHelpText } from "./format.js";
-import { FixRefused, requestFix } from "./fixer/requests.js";
+import { FixRefused, requestFixFromThread } from "./fixer/requests.js";
 import { appForRepo } from "./reviewer/pr.js";
 import { requestReview } from "./reviewer/requests.js";
 import { requestedPrs } from "./reviewer/thread.js";
@@ -52,7 +52,7 @@ export async function onFixerMention({ config, mention, token, client = slackCli
   const { messages, request } = await threadOf(slack, mention);
   try {
     const force = NEW_FIX.test(mention.text ?? "");
-    await requestFix({ config, reader: slack, poster: slack, thread: messages, requester: request.user ?? null, force, via: "slack-bot" });
+    await requestFixFromThread({ config, reader: slack, poster: slack, thread: messages, request, force, via: "slack-bot" });
     return { requested: 1 };
   } catch (err) {
     console.error(`No se pudo pedir la corrección del hilo ${mention.threadTs}: ${err.message}`);

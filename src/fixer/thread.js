@@ -1,4 +1,4 @@
-import { prUrls } from "../reviewer/pr.js";
+import { mentionsPr, prUrls } from "../reviewer/pr.js";
 
 const CRASHLYTICS_LINK = /https:\/\/console\.firebase\.google\.com\/[^\s|>]*?\/crashlytics\/app\/([\w:.-]+)\/issues\/([0-9a-f]+)[^\s|>]*/i;
 const VERSION = String.raw`(\d[\w.-]* \(\d+\))`;
@@ -93,6 +93,20 @@ export function fixInProgress(messages, now = Date.now()) {
   for (const m of messages) {
     if (FIX_ACK.test(m.text ?? "")) since = Number(m.ts) * 1000;
     else if (FIX_DONE.test(m.text ?? "")) since = null;
+  }
+  return since !== null && now - since < IN_PROGRESS_MS;
+}
+
+const PR_FIX_ACK = /El \*Corrector\* atiende las notas/;
+const PR_FIX_DONE = /\*(Notas atendidas|Sin cambios en el PR|No pude atender las notas)\*/;
+
+/** Whether the Corrector took the notes of one of `prs` in the last three hours and hasn't given its final answer yet. */
+export function prFixInProgress(messages, prs, now = Date.now()) {
+  let since = null;
+  for (const m of messages) {
+    const text = m.text ?? "";
+    if (PR_FIX_ACK.test(text) && prs.some((pr) => mentionsPr(text, pr))) since = Number(m.ts) * 1000;
+    else if (PR_FIX_DONE.test(text) && !/en verificación/.test(text)) since = null;
   }
   return since !== null && now - since < IN_PROGRESS_MS;
 }

@@ -338,7 +338,7 @@ Opcional: crea la app de Slack con los pasos del bot, usando [`slack/tester-mani
    - **Disparador:** Webhook. Copia la URL y la llave a `FIXER_WEBHOOK_URL` y `FIXER_WEBHOOK_KEY`.
    - **Environment:** Super App, con los dos repos de las apps.
    - **Herramientas:** la de crear pull requests, que viene activada.
-   - **Prompt:** [`automation/fixer-prompt.md`](automation/fixer-prompt.md).
+   - **Prompt:** [`automation/fixer-prompt.md`](automation/fixer-prompt.md). Atiende dos peticiones con el mismo webhook: corregir una falla (`crash-fix-request`, abre PR nuevos) y atender las notas del Revisor en un PR existente (`pr-fix-request`, hace commits en la rama de ese PR, la pida quien la pida). En PR de un fork no puede hacer push y lo reporta.
    - **Modelo:** uno fuerte en código.
 3. Agrega a la regla de enrutamiento de `@Cursor` la palabra `corrige`, apuntando al environment Super App, igual que `revisa`.
 
