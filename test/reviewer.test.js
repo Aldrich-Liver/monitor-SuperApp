@@ -213,12 +213,17 @@ test("formats the verdict for the thread", () => {
     /\n_Ronda anterior:_ Los 2 puntos se corrigieron\.\nListo\.\n\*¿Corrige la falla\?\*/
   );
 
-  const items = Array.from({ length: 8 }, (_, i) => ({ file: "A.swift", line: i + 1, problem: `p${i}`, suggestion: "s", guideline: "AGENTS.md §2.1" }));
-  const changes = reviewText(context, { verdict: "changes", summary: "Falta el gemelo.", items, githubPosted: true });
-  assert.match(changes, /^:warning: \*Cambios necesarios\* · <\S+\|PR #7> · 8 puntos · <@UDEV>\n1\. `A\.swift:1` p0: s\n/);
-  assert.doesNotMatch(changes, /Falta el gemelo|AGENTS\.md/, "the summary and guidelines stay in the PR when there are items");
-  assert.match(changes, /_y 2 más en el PR\._\n_Sugerencias y lineamientos en el PR\._$/);
-  assert.match(reviewText(context, { verdict: "changes", items: [{ file: "src/A.swift", problem: "Usa GlobalScope.", suggestion: "Usa el scope inyectado." }] }), /\n1\. `A\.swift` Usa GlobalScope: usa el scope inyectado\.$/);
+  const items = Array.from({ length: 8 }, (_, i) => ({ file: "src/A.swift", line: i + 1, problem: `p${i}`, suggestion: "s", guideline: "AGENTS.md §2.1" }));
+  items.push({ problem: "La descripción no dice qué no se probó: ni en un equipo ni en el APK release.", suggestion: "Agrega la sección." });
+  const review = { verdict: "changes", summary: "Falta el gemelo.", previous: "Se corrigió el 1.", meetsGoal: "Parcialmente.", items, githubPosted: true };
+  const changes = reviewText(context, review);
+  assert.match(changes, /^:warning: \*Cambios necesarios\* · <\S+\|PR #7> · 9 puntos · <@UDEV>\n1\. `A\.swift:1`\n2\. `A\.swift:2`\n/);
+  assert.match(changes, /\n8\. `A\.swift:8`\n9\. La descripción no dice qué no se probó\n_Detalle en el PR\._$/);
+  assert.doesNotMatch(changes, /Falta el gemelo|Ronda anterior|Cumple|p0|AGENTS\.md/, "the detail stays in the PR");
+
+  const offGithub = reviewText(context, { ...review, githubPosted: false });
+  assert.match(offGithub, /\n_Ronda anterior:_ Se corrigió el 1\.\n1\. `A\.swift:1` p0: s\n/);
+  assert.match(offGithub, /\n9\. La descripción no dice qué no se probó: ni en un equipo ni en el APK release: agrega la sección\.\n\*¿Cumple su objetivo\?\* Parcialmente\.\n_No quedó en el PR de GitHub\._$/);
 
   assert.match(reviewText(context, { verdict: "error", summary: "No tengo acceso." }), /^:x: \*No pude revisar el\* <.*\|PR #7> · No tengo acceso\.$/);
   assert.match(reviewAckText({ pr }), /^:eyes: Revisando el <.*\|PR #7>…$/);

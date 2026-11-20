@@ -238,8 +238,6 @@ export function errorText(message, { esc = escape } = {}) {
   return `:x: *Monitor sin datos de Crashlytics* · ${hint ?? `\`${esc(truncate(message.replace(/\s+/g, " "), 300))}\``}`;
 }
 
-const MAX_REVIEW_ITEMS = 6;
-
 const prLink = (pr) => `<${pr.url}|PR #${pr.number}>`;
 const userMention = (id) => (id && /^[UW][A-Z0-9]+$/.test(id) ? `<@${id}> ` : "");
 
@@ -255,8 +253,17 @@ const baseName = (path = "") => path.split("/").pop();
 const sentence = (text = "") => text.trim().replace(/[.;\s]+$/, "");
 const lowerFirst = (text = "") => text.replace(/^\p{Lu}(?!\p{Lu})/u, (c) => c.toLowerCase());
 
+const SHORT_ITEM = 80;
+
+const itemWhere = (item) => (item.file ? `\`${escape(baseName(item.file))}${item.line ? `:${item.line}` : ""}\`` : "");
+
+/** Only where to fix it; a point without a file keeps the start of its problem so it is not an empty line. */
+function shortReviewItem(item, n) {
+  return `${n}. ${itemWhere(item) || escape(truncate((item.problem ?? "").split(/(?<=[.:])\s/)[0].replace(/[.:;,\s]+$/, ""), SHORT_ITEM))}`;
+}
+
 function reviewItem(item, n) {
-  const where = item.file ? `\`${escape(baseName(item.file))}${item.line ? `:${item.line}` : ""}\` ` : "";
+  const where = item.file ? `${itemWhere(item)} ` : "";
   const problem = item.problem ?? "";
   if (!item.suggestion) return `${n}. ${where}${escape(problem)}`;
   return `${n}. ${where}${escape(sentence(problem))}: ${escape(lowerFirst(item.suggestion))}`;
@@ -277,14 +284,18 @@ export function reviewText(context, review) {
     userMention(context.requested_by).trim() || null,
   ];
   const lines = [head.filter(Boolean).join(" · ")];
+  // The detail of each point is already in the GitHub review; the thread only says which files to fix.
+  if (review.githubPosted && items.length) {
+    lines.push(...items.map((item, i) => shortReviewItem(item, i + 1)), "_Detalle en el PR._");
+    return truncate(lines.join("\n"), MESSAGE_LIMIT);
+  }
   if (review.previous) lines.push(`_Ronda anterior:_ ${escape(review.previous)}`);
   if (items.length) {
-    lines.push(...items.slice(0, MAX_REVIEW_ITEMS).map((item, i) => reviewItem(item, i + 1)));
-    if (items.length > MAX_REVIEW_ITEMS) lines.push(`_y ${items.length - MAX_REVIEW_ITEMS} más en el PR._`);
+    lines.push(...items.map((item, i) => reviewItem(item, i + 1)));
   } else if (review.summary) lines.push(escape(review.summary));
   const goal = review.fixesFailure ? `*¿Corrige la falla?* ${escape(review.fixesFailure)}` : review.meetsGoal ? `*¿Cumple su objetivo?* ${escape(review.meetsGoal)}` : null;
   if (goal) lines.push(goal);
-  if (review.githubPosted && items.length) lines.push("_Sugerencias y lineamientos en el PR._");
+  if (items.length) lines.push("_No quedó en el PR de GitHub._");
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }
 
