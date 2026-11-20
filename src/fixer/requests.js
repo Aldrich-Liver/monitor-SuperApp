@@ -35,16 +35,18 @@ export async function requestFix({ config, reader, poster, thread, requester, fo
   if (!failure) throw new FixRefused("Ese hilo no es el de una falla del monitor de Crashlytics.");
   if (!failure.sourceRepo) {
     throw new FixRefused(`${failure.app} no tiene sourceRepo en config/apps.json.`, {
-      notice: `:information_source: No tengo el código de ${failure.app}: el Corrector solo trabaja en las apps con repo en el environment.`,
+      notice: `:information_source: El Corrector no tiene el código de ${failure.app}.`,
     });
   }
   const linked = linkedFixPrs(thread, failure.sourceRepo);
   if (linked.length && !force) {
     throw new FixRefused(`La falla ya tiene PR en su hilo (${linked.map((p) => p.url).join(", ")}). Usa --force para pedir otra corrección.`, {
-      notice: ":information_source: Esta falla ya tiene PR en su hilo. Si hace falta otra corrección, pídela a @Cursor diciendo que es una corrección nueva.",
+      notice: ":information_source: Ya tiene PR en este hilo. Para otra corrección: `@Cursor corrige esta falla, es una corrección nueva`.",
     });
   }
-  if (fixInProgress(thread) && !force) throw new FixRefused("El Corrector ya está trabajando en esta falla; responde en el hilo cuando termine.");
+  if (fixInProgress(thread) && !force) throw new FixRefused("El Corrector ya está trabajando en esta falla; responde en el hilo cuando termine.", {
+      notice: ":information_source: El Corrector ya está en esta falla.",
+    });
 
   requester ??= fixRequester(thread);
   const payload = {
@@ -58,7 +60,7 @@ export async function requestFix({ config, reader, poster, thread, requester, fo
     thread: threadContext(thread),
   };
 
-  await say(fixAckText({ requester, failure }));
+  await say(fixAckText());
   if (dryRun) {
     console.log(`--- payload para el Corrector ---\n${JSON.stringify(payload, null, 2)}`);
     return payload;

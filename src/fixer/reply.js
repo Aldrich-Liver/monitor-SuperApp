@@ -30,7 +30,7 @@ if (!context?.thread_ts || !context.channel) {
   process.exit(1);
 }
 
-const text = fixResultText(result, prs);
+const text = fixResultText(result, prs, { requester: context.requested_by });
 if (args["dry-run"]) {
   console.log(`--- respuesta en hilo ---\n${text}`);
   process.exit(0);

@@ -102,14 +102,11 @@ test("a new or first-seen version produces the monitor-active message with every
   const text = versionText(versionFinding(apps));
   assert.equal(
     text,
-    [
-      ":white_check_mark: *Monitor de Crashlytics activo* · versión nueva: Super App Android 1.5.6 (291)",
-      "*Super App Android 1.5.6 (291)*: versión nueva (antes 1.5.5 (290)), 2 issues con eventos hasta ahora",
-      "Super App iOS 1.5.6 (291): 0 issues con eventos en esta versión",
-      "Contacto Logístico Android: sin datos en Crashlytics",
-      "Contacto Logístico iOS 1.0.0 (1): 1 issue existente registrado",
-      "Cada falla nueva de la última versión tiene su propio hilo, sin importar su gravedad; las abiertas van en el resumen de cada mañana.",
-    ].join("\n")
+    ":package: *Versión nueva en Crashlytics* · Super App Android 1.5.6 (291), antes 1.5.5 (290) · 2 issues con eventos · Contacto Logístico iOS 1.0.0 (1): en seguimiento desde ahora"
+  );
+  assert.equal(
+    versionText(versionFinding(apps.map((s) => ({ ...s, change: s.change && "first" })))),
+    ":white_check_mark: *Monitor de Crashlytics activo* · Super App Android 1.5.6 (291) · Super App iOS 1.5.6 (291) · Contacto Logístico Android: sin datos · Contacto Logístico iOS 1.0.0 (1)"
   );
 });
 
@@ -139,12 +136,12 @@ test("each bug report is its own message, escapes Slack markup and carries its R
 
   const forCursor = bugReportText(b, { esc: neutralize, ref: "CR-ABC123" });
   assert.match(forCursor, /`Claseb\.‹init›`/);
-  assert.match(forCursor, /en el hilo\. · Ref\. CR-ABC123$/);
+  assert.equal(forCursor, ":rotating_light: *Falla nueva en Super App Android 1.5.5 (290)* · Crash · `Claseb.‹init›`\n1 evento · 2 usuarios · nuevo en esta versión · Ref. CR-ABC123");
 });
 
 test("handoff names the analyst or mentions it", () => {
-  assert.match(handoffText({ mention: null }), /^:mag: \*Analista Crashlytics\*, revisa esta falla/);
-  assert.match(handoffText({ mention: "<@U123>", reopened: true }), /^:mag: <@U123>, revisa otra vez esta falla/);
+  assert.equal(handoffText({ mention: null }), ":mag: *Analista Crashlytics*, analiza esta falla.");
+  assert.equal(handoffText({ mention: "<@U123>", reopened: true }), ":mag: <@U123>, analiza otra vez esta falla.");
 });
 
 test("detail reply includes the error, where it happened, the analysis and a link", () => {
@@ -152,18 +149,16 @@ test("detail reply includes the error, where it happened, the analysis and a lin
   const [f] = run(prev, [issue("a", 4)]).findings;
   f.sampleEvent = { blameFrame: "mx.liverpool.superapp.Clasea.<init> (Clasea.kt:63) [com.liverpool.superapp1]" };
   const text = detailText(f, { cause: "La app espera demasiado & se rinde.", fix: "Subir el tiempo de espera." }, 1, 2);
-  assert.match(text, /^\*1\/2 · Super App Android 1\.5\.5 \(290\)\* · No fatal/);
-  assert.match(text, /\*Dónde:\* `Clasea\.&lt;init&gt; \(Clasea\.kt:63\)`\n/);
-  assert.match(text, /\*Eventos:\* 4 nuevos · 4 en esta versión · 2 usuarios · desde 1\.5\.2/);
+  assert.match(text, /^\*1\/2 · Super App Android 1\.5\.5 \(290\)\* · No fatal · `Clasea\.kt:63` · <https:\/\/console\.firebase\.google\.com\/a\|Ver en Crashlytics>\n/);
 
   f.sampleEvent = {
     blameFrame: `${f.issue.title} (Clasea.java:63) [com.liverpool.superapp1]`,
     frames: [`> ${f.issue.title} (Clasea.java:63)`, "  mx.liverpool.superapp.Arranque.protegido (Arranque.kt:55) [x]"],
   };
-  assert.match(detailText(f, null, 1, 1), /\*Dónde:\* `Arranque\.protegido \(Arranque\.kt:55\)`/);
+  assert.match(detailText(f, null, 1, 1), /· `Arranque\.kt:55` ·[\s\S]*\n_Sin análisis disponible\._/);
   assert.match(text, /\*Qué está pasando:\* La app espera demasiado &amp; se rinde\./);
   assert.match(text, /\*Solución propuesta:\* Subir el tiempo de espera\./);
-  assert.match(text, /<https:\/\/console\.firebase\.google\.com\/a\|Ver en Crashlytics>/);
+  assert.match(text, /\n_¿La corregimos\? `@Cursor corrige esta falla`_$/);
 });
 
 test("short titles keep the last class and method", () => {
