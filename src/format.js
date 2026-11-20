@@ -204,7 +204,7 @@ export function detailText(d, analysis, index = 1, total = 1) {
   if (analysis?.cause) lines.push(`*Qué está pasando:* ${escape(analysis.cause)}`);
   if (analysis?.fix) lines.push(`*Solución propuesta:* ${escape(analysis.fix)}`);
   if (!analysis) lines.push("_Sin análisis disponible._");
-  if (d.sourceRepo) lines.push("_¿La corregimos? `@Cursor corrige esta falla`_");
+  if (d.sourceRepo) lines.push("_¿La corregimos? `@Corrector de fallas corrige esta falla`_");
   return truncate(lines.join("\n"), MESSAGE_LIMIT);
 }
 

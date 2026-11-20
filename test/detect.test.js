@@ -158,7 +158,7 @@ test("detail reply includes the error, where it happened, the analysis and a lin
   assert.match(detailText(f, null, 1, 1), /· `Arranque\.kt:55` ·[\s\S]*\n_Sin análisis disponible\._/);
   assert.match(text, /\*Qué está pasando:\* La app espera demasiado &amp; se rinde\./);
   assert.match(text, /\*Solución propuesta:\* Subir el tiempo de espera\./);
-  assert.match(text, /\n_¿La corregimos\? `@Cursor corrige esta falla`_$/);
+  assert.match(text, /\n_¿La corregimos\? `@Corrector de fallas corrige esta falla`_$/);
 });
 
 test("short titles keep the last class and method", () => {

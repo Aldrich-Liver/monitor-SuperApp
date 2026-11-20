@@ -20,6 +20,9 @@ async function threadOf(slack, mention) {
   return { thread_ts: mention.threadTs, request, messages: messages.length ? messages : [request] };
 }
 
+/** "es una corrección nueva" asks for another fix even when the failure already has a PR. */
+export const NEW_FIX = /correcci[oó]n nueva|nueva correcci[oó]n|otra correcci[oó]n/i;
+
 const sourceApps = (config) => config.apps.filter((a) => a.sourceRepo).map((a) => a.name);
 
 export async function onReviewerMention({ config, mention, token, client = slackClient }) {
@@ -48,7 +51,8 @@ export async function onFixerMention({ config, mention, token, client = slackCli
   const slack = client({ token, channel: mention.channel });
   const { messages, request } = await threadOf(slack, mention);
   try {
-    await requestFix({ config, reader: slack, poster: slack, thread: messages, requester: request.user ?? null, via: "slack-bot" });
+    const force = NEW_FIX.test(mention.text ?? "");
+    await requestFix({ config, reader: slack, poster: slack, thread: messages, requester: request.user ?? null, force, via: "slack-bot" });
     return { requested: 1 };
   } catch (err) {
     console.error(`No se pudo pedir la corrección del hilo ${mention.threadTs}: ${err.message}`);

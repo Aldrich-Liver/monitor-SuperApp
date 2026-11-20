@@ -87,6 +87,14 @@ test("@Corrector de fallas starts the Corrector in a failure's thread and refuse
   assert.match(posts[0].text, /Corrector\* toma esta falla/);
 
   hooks = [];
+  const pr = { ts: "403.0", user: "UDEV", text: `Lo tomo: <${ANDROID}>` };
+  const again = (text) => ({ channel: "C1", ts: "404.0", threadTs: report.ts, user: "UDEV", text });
+  const withPr = fakeClient([report, pr, { ts: "404.0", user: "UDEV", text: "x" }]);
+  assert.equal((await onFixerMention({ config, mention: again("<@UFIX> corrige esta falla"), token: "x", client: withPr.client })).requested, 0);
+  assert.match(withPr.posts[0].text, /es una corrección nueva/);
+  assert.equal((await onFixerMention({ config, mention: again("<@UFIX> corrige esta falla, es una corrección nueva"), token: "x", client: withPr.client })).requested, 1);
+
+  hooks = [];
   const other = fakeClient([parent, { ts: "402.0", user: "UDEV", text: "<@UFIX> corrige" }]);
   const refused = await onFixerMention({ config, mention: { channel: "C1", ts: "402.0", threadTs: parent.ts, user: "UDEV", text: "<@UFIX> corrige" }, token: "x", client: other.client });
   assert.equal(refused.requested, 0);
