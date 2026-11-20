@@ -412,11 +412,16 @@ export function mentionHelpText(kind, apps = []) {
   if (kind === "tester") {
     return `:information_source: Pega el enlace del PR en tu mensaje, o escríbeme en el hilo del PR. Solo pruebo PRs de ${apps.join(" o ")}.`;
   }
-  return ":information_source: Escríbeme en el hilo de la falla: `@Corrector de fallas corrige esta falla`.";
+  return ":information_source: Escríbeme en el hilo de la falla (`@Corrector de fallas corrige esta falla`) o en el del PR (`@Corrector de fallas corrige las notas del revisor`).";
 }
 
 export function fixAckText() {
   return ":wrench: El *Corrector* toma esta falla. Aviso aquí con los PR.";
+}
+
+/** Starts with "El *Corrector* atiende las notas", which marks the PRs as taken so a second request waits. */
+export function prFixAckText({ prs }) {
+  return `:wrench: El *Corrector* atiende las notas del ${prs.map(prLink).join(" y del ")}. Subo los cambios a la misma rama y aviso aquí.`;
 }
 
 export function fixerUnavailableText(reason) {
@@ -430,12 +435,24 @@ const FIX_HEAD = {
   error: ":x: *No pude corregir esta falla*",
 };
 
+export const PR_FIX_HEAD = {
+  "in-review": ":arrows_counterclockwise: *Notas atendidas, en verificación*",
+  fixed: ":hammer_and_wrench: *Notas atendidas*",
+  "no-change": ":information_source: *Sin cambios en el PR*",
+  error: ":x: *No pude atender las notas*",
+};
+
+/** The Corrector's answer in a PR's thread after working on the Revisor's notes. */
+export function prFixResultText(result, prs, { requester } = {}) {
+  return fixResultText(result, prs, { requester, heads: PR_FIX_HEAD });
+}
+
 /**
  * The Corrector's answer in the bug's thread. Linking the PRs here is what puts the bug in
  * correction; the summary goes on the second line, where the monitor reads a no-change verdict.
  */
-export function fixResultText(result, prs, { requester } = {}) {
-  const head = [FIX_HEAD[result.status] ?? `*${escape(result.status)}*`, ...prs.map((pr) => `<${pr.url}|${twinLabel(pr.repo)} #${pr.number}>`)];
+export function fixResultText(result, prs, { requester, heads = FIX_HEAD } = {}) {
+  const head = [heads[result.status] ?? `*${escape(result.status)}*`, ...prs.map((pr) => `<${pr.url}|${twinLabel(pr.repo)} #${pr.number}>`)];
   if (result.status === "fixed" && userMention(requester)) head.push(userMention(requester).trim());
   const lines = [head.join(" · ")];
   if (result.summary) lines.push(escape(result.summary));

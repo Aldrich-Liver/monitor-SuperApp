@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { readJson } from "../files.js";
-import { fixResultText } from "../format.js";
+import { fixResultText, prFixResultText } from "../format.js";
 import { parsePr } from "../reviewer/pr.js";
 import { fixerPoster } from "./requests.js";
 
@@ -30,7 +30,8 @@ if (!context?.thread_ts || !context.channel) {
   process.exit(1);
 }
 
-const text = fixResultText(result, prs, { requester: context.requested_by });
+const forPrs = (context.source ?? readJson(args.payload)?.source) === "pr-fix-request";
+const text = (forPrs ? prFixResultText : fixResultText)(result, prs, { requester: context.requested_by });
 if (args["dry-run"]) {
   console.log(`--- respuesta en hilo ---\n${text}`);
   process.exit(0);

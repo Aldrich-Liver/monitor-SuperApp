@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { readJson } from "../files.js";
 import { FIX_VERBS, askPattern, pendingBotMentions } from "../reviewer/thread.js";
 import { botIdentity, slackClient } from "../slack.js";
-import { FixRefused, requestFix } from "./requests.js";
+import { FixRefused, requestFixFromThread } from "./requests.js";
 
 const { values: args } = parseArgs({
   options: {
@@ -43,7 +43,7 @@ const threads = new Map();
 for (const item of pending) threads.set(item.thread_ts, item);
 for (const item of threads.values()) {
   try {
-    await requestFix({ config, reader, poster, thread: item.messages, requester: item.request.user ?? null, via: "slack-mention", dryRun });
+    await requestFixFromThread({ config, reader, poster, thread: item.messages, request: item.request, via: "slack-mention", dryRun });
     requested++;
   } catch (err) {
     console.error(`No se pudo pedir la corrección del hilo ${item.thread_ts}: ${err.message}`);

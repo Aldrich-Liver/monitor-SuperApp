@@ -95,11 +95,44 @@ test("@Corrector de fallas starts the Corrector in a failure's thread and refuse
   assert.equal((await onFixerMention({ config, mention: again("<@UFIX> corrige esta falla, es una corrección nueva"), token: "x", client: withPr.client })).requested, 1);
 
   hooks = [];
-  const other = fakeClient([parent, { ts: "402.0", user: "UDEV", text: "<@UFIX> corrige" }]);
-  const refused = await onFixerMention({ config, mention: { channel: "C1", ts: "402.0", threadTs: parent.ts, user: "UDEV", text: "<@UFIX> corrige" }, token: "x", client: other.client });
+  const notes = fakeClient([report, pr]);
+  assert.equal((await onFixerMention({ config, mention: again("<@UFIX> corrige las notas del revisor"), token: "x", client: notes.client })).requested, 1);
+  assert.deepEqual(hooks.map((h) => [h.payload.source, h.payload.prs.map((p) => p.number), h.payload.failure.ref]), [["pr-fix-request", [9], "CR-E6CF6D"]]);
+
+  hooks = [];
+  const other = fakeClient([{ ts: "402.0", user: "UDEV", text: "<@UFIX> corrige" }]);
+  const refused = await onFixerMention({ config, mention: { channel: "C1", ts: "402.0", threadTs: "402.0", user: "UDEV", text: "<@UFIX> corrige" }, token: "x", client: other.client });
   assert.equal(refused.requested, 0);
   assert.equal(hooks.length, 0);
   assert.match(other.posts[0].text, /hilo de la falla/);
+});
+
+test("@Corrector de fallas in a PR's thread works on the Revisor's notes, whoever asks", async () => {
+  const twin = { ts: "101.0", bot_id: "BMON", text: `:link: Gemelo en Super App iOS: <${IOS}|PR #7>` };
+  const verdict = { ts: "150.0", bot_id: "BREV", text: `:warning: *Cambios necesarios* · <${ANDROID}|PR #9> · 2 puntos\n1. \`Pago.kt:40\`\n2. \`Carrito.kt\`` };
+  const ack = { ts: "149.0", bot_id: "BREV", text: `:eyes: Revisando el <${ANDROID}|PR #9>…` };
+  const ask = { ts: "600.0", user: "UOTRO", text: "<@UFIX> corrige las notas del revisor" };
+  const { client, posts } = fakeClient([parent, twin, ack, verdict, ask]);
+  const mention = { channel: "C1", ts: ask.ts, threadTs: parent.ts, user: "UOTRO", text: ask.text };
+  assert.equal((await onFixerMention({ config, mention, token: "x", client })).requested, 1);
+  const [{ url, payload }] = hooks;
+  assert.equal(url, "https://hooks.test/fixer");
+  assert.equal(payload.source, "pr-fix-request");
+  assert.equal(payload.requested_by, "UOTRO");
+  assert.equal(payload.thread_ts, "100.0");
+  assert.deepEqual(payload.prs.map((p) => [p.number, p.review?.status ?? null]), [[9, "changes"], [7, null]]);
+  assert.match(posts[0].text, /^:wrench: El \*Corrector\* atiende las notas del <[^>]*pull\/9\|PR #9> y del <[^>]*pull\/7\|PR #7>/);
+
+  hooks = [];
+  const takenAt = (Date.now() / 1000 - 60).toFixed(6);
+  const busy = fakeClient([parent, twin, verdict, { ts: takenAt, bot_id: "BFIX", text: posts[0].text }]);
+  assert.equal((await onFixerMention({ config, mention: { ...mention, ts: "602.0" }, token: "x", client: busy.client })).requested, 0);
+  assert.equal(hooks.length, 0);
+  assert.match(busy.posts[0].text, /ya está atendiendo las notas/);
+
+  const done = { ts: (Date.now() / 1000).toFixed(6), bot_id: "BFIX", text: `:hammer_and_wrench: *Notas atendidas* · <${ANDROID}|Android #9>` };
+  const again = fakeClient([parent, twin, verdict, { ts: takenAt, bot_id: "BFIX", text: posts[0].text }, done]);
+  assert.equal((await onFixerMention({ config, mention: { ...mention, ts: "603.0" }, token: "x", client: again.client })).requested, 1);
 });
 
 test("@Pruebas de PRs runs the tests of the Android PR only", async () => {
