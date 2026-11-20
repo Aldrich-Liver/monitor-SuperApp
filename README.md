@@ -366,7 +366,7 @@ Opcional: crea la app de Slack con los pasos del bot, usando [`slack/tester-mani
    - `REVIEWER_WEBHOOK_URL`, `REVIEWER_WEBHOOK_KEY`, `FIXER_WEBHOOK_URL`, `FIXER_WEBHOOK_KEY`, `TESTER_WEBHOOK_URL` y `TESTER_WEBHOOK_KEY`: los mismos valores de Cloud Agents > Secrets.
 5. **Comprueba.** `npx agent-sdk logs --prod --slug agentes-team-mobile` debe mostrar `Socket Mode connected` por cada bot. Arroba al Revisor en el hilo de un PR: el `:eyes:` debe aparecer en segundos.
 
-El agente solo puede llamar a los hosts de `hosting.egressDomains` en [`bot/agent.ts`](bot/agent.ts) (Slack ya viene incluido). Si los webhooks de las automatizaciones no están en `api.cursor.com` y la activación falla, agrega su host ahí y vuelve a desplegar.
+El agente solo puede llamar a los hosts de `hosting.egressDomains` en [`bot/agent.ts`](bot/agent.ts) (Slack ya viene incluido). Los webhooks de las automatizaciones están en `api2.cursor.sh`. Si alguno cambia de host y la activación falla, agrega su host ahí y vuelve a desplegar.
 
 Todos los secretos van en **Cloud Agents > Secrets** como Runtime Secret, disponibles para el environment Super App.
 
