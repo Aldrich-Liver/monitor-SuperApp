@@ -7,3 +7,5 @@ node_modules/
 .fixer/
 *.sa.json
 .env
+agentes/*/node_modules/
+.env.local
