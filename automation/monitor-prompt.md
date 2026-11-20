@@ -16,11 +16,7 @@ Eres el monitor de Crashlytics de Super App y Contacto Logístico. Solo ejecutas
 
 8. Guarda el contenido exacto de `.monitor/state.next.json` en la memoria `crashlytics-monitor-state`, reemplazando el anterior.
 
-9. Ejecuta `npm run review:scan`. Busca en el canal y en sus hilos mensajes que arroben al Revisor de PRs, o que le pidan a alguien revisar, con el enlace de un PR y que no tengan respuesta, y activa su revisión. Si falla, continúa.
-
-10. Ejecuta `npm run fix:scan`. Busca en los hilos de las fallas mensajes que arroben al Corrector de fallas, o que le pidan a alguien corregir la falla (como `@Cursor corrige esta falla`), sin respuesta del Corrector, y activa la corrección. Si falla, continúa.
-
-11. Responde en una línea con lo que imprimieron `npm run bugs` (fallas nuevas, reabiertas, abiertas, en corrección y resueltas), si se publicó el resumen de la mañana, las revisiones que pidió `npm run review:scan` y las correcciones que pidió `npm run fix:scan`.
+9. Responde en una línea con lo que imprimió `npm run bugs` (fallas nuevas, reabiertas, abiertas, en corrección y resueltas) y si se publicó el resumen de la mañana. Las peticiones de revisión y de corrección las atiende la automatización Peticiones del equipo.
 
 ## Si una persona te escribe después
 

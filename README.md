@@ -4,7 +4,7 @@ Revisa cada hora la última versión de Super App y Contacto Logístico (Android
 
 Para el equipo: cómo pedir revisiones y correcciones, y cuánto esperar, en [COMO-USAR.md](COMO-USAR.md).
 
-Funciona con seis automatizaciones de Cursor en el environment **Super App**:
+Funciona con siete automatizaciones de Cursor en el environment **Super App**:
 
 1. **Monitor Crashlytics**, programada cada hora. `npm run check` lee Crashlytics, `npm run bugs` lleva el seguimiento de cada falla y `npm run render` escribe un mensaje por cada falla nueva y, cada mañana, el resumen de las fallas abiertas, que Cursor publica con la herramienta Send to Slack. Luego `npm run notify` encuentra cada mensaje por su `Ref. CR-…`, abre su hilo, arroba al Analista y lo activa por webhook, publica los avisos de seguimiento y responde bajo el resumen con los enlaces a cada hilo.
 2. **Analista Crashlytics**, activada por webhook. Ejecuta `npm run details`, lee el código del commit con el que se compiló la versión y escribe la causa y la solución propuesta en palabras simples. Con `npm run reply` responde en el hilo de cada falla.
@@ -12,6 +12,7 @@ Funciona con seis automatizaciones de Cursor en el environment **Super App**:
 4. **PR nuevo**, activada por GitHub al abrir un PR (o marcarlo listo para revisión) en cualquiera de las dos apps. Le da al PR su hilo en `#team-mobile` (o usa el que ya tiene, como el de la falla que corrige), avisa si falta el PR gemelo en la otra plataforma y pide la revisión al Revisor de PRs, sin que nadie tenga que arrobarlo.
 5. **Pruebas de PRs**, activada por GitHub al abrir un PR de Android o subirle commits. Corre `./gradlew :app:testDevDebugUnitTest :app:lintDevDebug` sobre el último commit y publica el resultado en el PR y en su hilo. Mientras el CI esté detenido, es la única verificación automática del código antes del merge.
 6. **Corrector**, activada por webhook cuando alguien escribe `@Cursor corrige esta falla` o arroba a `@Corrector de fallas` en el hilo de una falla. Sigue la skill `investigar-crash` de las apps, corrige la causa en Android y en iOS, abre un PR por repo y responde en el hilo con los enlaces. Eso pone la falla *En corrección*, y la automatización PR nuevo pide la revisión y las pruebas en el mismo hilo.
+7. **Peticiones del equipo**, programada cada 5 minutos. Con `npm run review:scan` y `npm run fix:scan` encuentra las menciones a los bots del Revisor y del Corrector sin respuesta y los activa. Corre con la cuenta del dueño de las automatizaciones, así que nadie del equipo necesita cuenta de Cursor.
 
 ```
 :rotating_light: Falla nueva en Super App Android 1.5.5 (290) · No fatal · ArranqueAnfitrion$PasoArranqueExcedido.<init>
@@ -59,7 +60,7 @@ Cada issue de Crashlytics es una falla con su propio hilo, y todo lo que pasa co
 Sirve para cualquier PR de `sw-crp-super-app-android` o `sw-crp-super-app-ios`: la corrección de una falla del monitor, una función nueva, una mejora, documentación o una versión. Se pide pegando el enlace del PR en un mensaje de `#team-mobile`, en el canal principal o en un hilo, de una de estas formas:
 
 - **Arrobando a Cursor:** `@Cursor revisa este PR https://github.com/…/pull/12`. Cursor lee [`AGENTS.md`](AGENTS.md), ejecuta `npm run review:request -- <URL>` y el comando encuentra el mensaje por el enlace. La revisión empieza en segundos.
-- **Arrobando al bot:** `@Revisor de PRs https://github.com/…/pull/12`. El bot no recibe eventos de Slack, así que el monitor, en su corrida de cada hora, encuentra la mención con `npm run review:scan` y activa la revisión.
+- **Arrobando al bot:** `@Revisor de PRs https://github.com/…/pull/12`. El bot no recibe eventos de Slack, así que la automatización Peticiones del equipo, cada 5 minutos, encuentra la mención con `npm run review:scan` y activa la revisión. Es la forma de pedirlo sin cuenta de Cursor: `@Cursor` solo inicia agentes de personas con su cuenta de Slack vinculada al equipo de Cursor. A las demás Cursor les pide *Link Account*, y su petición la encuentra igual la búsqueda de cada 5 minutos.
 - **Desde otra automatización:** `npm run review:request -- <URL> --thread <ts del hilo>`, o un POST al webhook del Revisor con el payload que imprime `npm run review:request -- <URL> --dry-run`.
 
 Responde siempre en un hilo: el del mensaje que lo pidió, o uno nuevo debajo de él si se pidió en el canal principal. Primero avisa que empezó (`:eyes:`) y después publica el veredicto:
@@ -128,12 +129,12 @@ iOS no se prueba: los agentes en la nube corren en Linux y no hay Xcode. El Revi
 
 ## Corrector
 
-**Dónde llega la petición.** Los hilos de las fallas los abre el Monitor con Send to Slack, así que un `@Cursor corrige esta falla` en ese hilo no le llega a un agente nuevo de Cursor: le llega a la corrida del Monitor que publicó el mensaje. Lo mismo pasa con `@Cursor revisa este PR` en un hilo que abrió PR nuevo. Por eso esos prompts no corrigen ni revisan nada: ejecutan `fix:scan` y `review:scan`, que encuentran la petición sin respuesta y activan al Corrector o al Revisor. Si el aviso inmediato falla, el Monitor la encuentra en su siguiente corrida. Arrobar directo a `@Corrector de fallas` o a `@Revisor de PRs` funciona igual. El Corrector nunca toma una falla por su cuenta: solo cuenta un mensaje de una persona que arroba a `@Cursor` (su ID está en `cursorUserId` de `config/apps.json`) o al bot del Corrector. Pedirle a un compañero que arregle algo no lo activa. Para cancelar una petición que todavía no tiene respuesta del Corrector, borra el mensaje.
+**Dónde llega la petición.** Los hilos de las fallas los abre el Monitor con Send to Slack, así que un `@Cursor corrige esta falla` en ese hilo no le llega a un agente nuevo de Cursor: le llega a la corrida del Monitor que publicó el mensaje. Lo mismo pasa con `@Cursor revisa este PR` en un hilo que abrió PR nuevo. Por eso esos prompts no corrigen ni revisan nada: ejecutan `fix:scan` y `review:scan`, que encuentran la petición sin respuesta y activan al Corrector o al Revisor. Si el aviso inmediato falla, o si quien escribió no tiene cuenta de Cursor, la encuentra la automatización Peticiones del equipo en su siguiente corrida. Arrobar directo a `@Corrector de fallas` o a `@Revisor de PRs` funciona igual. El Corrector nunca toma una falla por su cuenta: solo cuenta un mensaje de una persona que arroba a `@Cursor` (su ID está en `cursorUserId` de `config/apps.json`) o al bot del Corrector. Pedirle a un compañero que arregle algo no lo activa. Para cancelar una petición que todavía no tiene respuesta del Corrector, borra el mensaje.
 
 Se pide en el hilo de la falla, de una de estas formas:
 
 - **Arrobando a Cursor:** `@Cursor corrige esta falla`. Cursor lee [`AGENTS.md`](AGENTS.md) y ejecuta `npm run fix:request -- CR-…` con la referencia del mensaje que abre el hilo. Empieza en segundos.
-- **Arrobando al bot:** `@Corrector de fallas`. El bot no recibe eventos de Slack, así que el monitor, en su corrida de cada hora, encuentra la mención con `npm run fix:scan` y activa la corrección. El bot contesta toda mención, aunque sea para decir que la falla ya tiene PR, y esa respuesta es la que la marca como atendida.
+- **Arrobando al bot:** `@Corrector de fallas`. El bot no recibe eventos de Slack, así que la automatización Peticiones del equipo, cada 5 minutos, encuentra la mención con `npm run fix:scan` y activa la corrección. El bot contesta toda mención, aunque sea para decir que la falla ya tiene PR, y esa respuesta es la que la marca como atendida.
 
 Las dos formas hacen lo mismo. El comando reconoce la falla con lo que ya está en el hilo (el reporte y el detalle del Analista, con su enlace a Crashlytics), avisa que el Corrector la tomó y lo activa por webhook. No lo activa si la falla ya tiene un PR en su hilo o si el Corrector la tomó hace menos de 3 h y no ha dado su respuesta final; `--force` pide otra corrección de todos modos.
 
@@ -322,6 +323,16 @@ Opcional: crea la app de Slack con los pasos del bot, usando [`slack/tester-mani
    - **Prompt:** [`automation/fixer-prompt.md`](automation/fixer-prompt.md).
    - **Modelo:** uno fuerte en código.
 3. Agrega a la regla de enrutamiento de `@Cursor` la palabra `corrige`, apuntando al environment Super App, igual que `revisa`.
+
+### 8. Peticiones del equipo
+
+Atiende cada 5 minutos las menciones a `@Revisor de PRs` y a `@Corrector de fallas`, y las peticiones a `@Cursor` de quien no tiene cuenta de Cursor. Corre con tu cuenta, así que el equipo no necesita vincular nada. No usa el disparador de Slack porque solo funciona en canales públicos y `#team-mobile` es privado.
+
+- **Disparador:** programado, con el cron `*/5 * * * *`.
+- **Environment:** Super App.
+- **Herramientas:** ninguna.
+- **Prompt:** [`automation/requests-prompt.md`](automation/requests-prompt.md).
+- **Modelo:** uno rápido y económico; solo ejecuta comandos.
 
 Todos los secretos van en **Cloud Agents > Secrets** como Runtime Secret, disponibles para el environment Super App.
 
