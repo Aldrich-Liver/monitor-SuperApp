@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { readJson } from "../files.js";
 import { botIdentity, slackClient } from "../slack.js";
-import { appForRepo, reviewableRepos } from "./pr.js";
+import { appForRepo } from "./pr.js";
 import { requestReview } from "./requests.js";
 import { pendingMentions } from "./thread.js";
 
@@ -34,7 +34,8 @@ let requested = 0;
 for (const item of pending) {
   const prs = item.prs.filter((p) => appForRepo(config, p.repo));
   if (!prs.length && !args["dry-run"]) {
-    const text = `:information_source: Solo reviso PRs de ${reviewableRepos(config).join(" o ")}.`;
+    const apps = config.apps.filter((a) => a.sourceRepo).map((a) => a.name);
+    const text = `:information_source: Solo reviso PRs de ${apps.join(" o ")}.`;
     await poster.post(text, item.thread_ts).catch((err) => console.error(`No se pudo responder en el hilo: ${err.message}`));
   }
   for (const pr of prs) {

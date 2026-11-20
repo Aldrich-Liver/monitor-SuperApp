@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { crashlyticsLink, failureFromThread, fixInProgress, fixRequester, linkedFixPrs, threadTarget } from "../src/fixer/thread.js";
+import { crashlyticsLink, failureFromThread, fixInProgress, fixRequester, linkedFixPrs, noChangeVerdict, threadTarget } from "../src/fixer/thread.js";
 import { parsePr } from "../src/reviewer/pr.js";
 import { FIX_VERBS, REVIEW_VERBS, askPattern, pendingBotMentions, pendingMentions, reviewVerdict } from "../src/reviewer/thread.js";
-import { fixResultText, prOpenedText, testsComment, testsText, twinOpenedText } from "../src/format.js";
+import { bugReportText, detailText, fixAckText, fixResultText, neutralize, prOpenedText, testsComment, testsText, twinMissingText, twinOpenedText } from "../src/format.js";
 import { testsVerdict } from "../src/tester/thread.js";
 import { compileErrors, lintVerdict, parseJunit, parseLint, testStatus } from "../src/tester/results.js";
 
@@ -91,10 +91,14 @@ test("the test result reads the same in the thread and on GitHub", () => {
     durationS: 266,
   };
   const text = testsText(result);
-  assert.match(text, /^:x: \*Pruebas fallidas\* · <https:\/\/github\.com\/.+\/pull\/14\|PR #14> de Super App Android · `3f2a9c1` · 2217 pruebas, 1 fallida · lint sin errores nuevos \(4 previos/);
-  assert.match(text, /• `ArranqueTest\.espera` · expected:&lt;1&gt; but was:&lt;2&gt;/);
+  assert.equal(
+    text,
+    `:x: *Pruebas fallidas* · <${ANDROID_PR}|PR #14> · \`3f2a9c1\` · 1 de 2217 pruebas falló · lint sin errores nuevos · 4 min · \`ArranqueTest.espera\``
+  );
+  const lint = { errors: 1, issues: [{ file: "app/src/main/java/Arranque.kt", line: 9, id: "UnusedVariable", message: "never used" }] };
+  assert.match(testsText({ ...result, lint }), /1 error nuevo de lint · 4 min\n• `ArranqueTest\.espera`\n• `Arranque\.kt:9` UnusedVariable$/);
   const comment = testsComment(result);
-  assert.match(comment, /^\*\*❌ Pruebas fallidas\*\* · `3f2a9c1` · 2217 pruebas, 1 fallida/);
+  assert.match(comment, /^\*\*❌ Pruebas fallidas\*\* · `3f2a9c1` · 1 de 2217 pruebas falló/);
   assert.match(comment, /- `ArranqueTest\.espera`: expected:<1> but was:<2>/);
   assert.match(testsText({ ...result, status: "passed", tests: { total: 5, failed: 0, failures: [] } }), /^:white_check_mark: \*Pruebas OK\*.*5 pruebas · lint/);
 });
@@ -103,11 +107,13 @@ test("the PR announcement carries plain links so the thread can be found by them
   const pr = { url: ANDROID_PR, number: 14, title: "Arranque: <rápido>", headBranch: "fix/arranque", author: "dev" };
   const twinPr = { url: "https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/9", number: 9 };
   const withTwin = prOpenedText({ pr, app: "Super App Android", twin: { repo: "sw-crp-super-app-ios", branch: "fix/arranque", pr: twinPr } });
-  assert.match(withTwin, /^:arrow_heading_up: \*PR nuevo en Super App Android\* · #14 · Arranque: ‹rápido›$/m);
-  assert.ok(withTwin.includes(`${ANDROID_PR} · \`fix/arranque\` · de dev`));
-  assert.ok(withTwin.includes(":link: Gemelo en iOS: https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/9"));
+  assert.equal(
+    withTwin,
+    `:arrow_heading_up: *PR nuevo* · Super App Android #14 · Arranque: ‹rápido› · de dev\n${ANDROID_PR} · gemelo iOS: https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/9`
+  );
   const missing = prOpenedText({ pr, app: "Super App Android", twin: { repo: "sw-crp-super-app-ios", branch: "fix/arranque", pr: null } });
-  assert.match(missing, /:warning: Todavía no hay PR gemelo en sw-crp-super-app-ios con la rama `fix\/arranque`/);
+  assert.ok(missing.endsWith(`${ANDROID_PR} · :warning: falta el gemelo en iOS`));
+  assert.equal(twinMissingText({ repo: "sw-crp-super-app-ios", branch: "fix/arranque" }), ":warning: Falta el gemelo en iOS (rama `fix/arranque`). Si solo aplica a una plataforma, dilo en el PR.");
   const unknown = prOpenedText({ pr, app: "Super App Android", twin: { repo: "sw-crp-super-app-ios", branch: "fix/arranque" } });
   assert.ok(!/gemelo/i.test(unknown));
   assert.ok(twinOpenedText({ pr: twinPr, app: "Super App iOS" }).includes("<https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/9|PR #9>"));
@@ -148,6 +154,24 @@ test("recognizes a bug from its thread: report, the Analista's detail and its Cr
   assert.equal(crashlyticsLink("https://console.firebase.google.com/project/p/crashlytics/app/android:com.liverpool.superapp1/issues/abc123").app, "android:com.liverpool.superapp1");
 });
 
+test("the Corrector reads the same bug from the short report and detail as Slack shows them", () => {
+  const f = {
+    app: "Super App Android",
+    version: "1.5.10 (295)",
+    newEvents: 4,
+    impactedUsers: 3,
+    totalEvents: 4,
+    sourceRepo: "sw-crp-super-app-android",
+    issue: { title: "mx.liverpool.ArranqueAnfitrion$PasoArranqueExcedido.<init>", subtitle: "No terminó en 10s", errorType: "NON_FATAL", uri: detail.text.match(/<(https:[^|]+)\|/)[1] },
+    sampleEvent: { blameFrame: "mx.liverpool.ArranqueAnfitrion.protegido (ArranqueAnfitrion.kt:76)" },
+  };
+  // Send to Slack turns bold into italics and joins the lines.
+  const posted = bugReportText(f, { esc: neutralize, ref: "CR-E6CF6D" }).replace(/\*/g, "_").replace(/\n/g, " ");
+  const reply = detailText(f, { cause: "La app no se cierra & tarda.", fix: "Inscribir en paralelo." });
+  assert.match(reply, /^\*Super App Android 1\.5\.10 \(295\)\* · No fatal · `ArranqueAnfitrion\.kt:76` · <https:\S+\|Ver en Crashlytics>\n> No terminó en 10s\n/);
+  assert.deepEqual(failureFromThread([{ ts: "1", text: posted }, { ts: "2", text: reply }], config), failureFromThread([report, detail], config));
+});
+
 test("finds the bug's thread from a Ref., a thread link or a ts", () => {
   assert.deepEqual(threadTarget("arregla Ref. cr-e6cf6d porfa"), { ref: "CR-E6CF6D" });
   assert.deepEqual(threadTarget("https://liverpool.slack.com/archives/C0ABC/p1795060900000100?thread_ts=1795060856.226779&cid=C0ABC"), { ts: "1795060856.226779" });
@@ -174,10 +198,15 @@ test("the Corrector's answer links each PR in the thread", () => {
     { url: ANDROID_PR, number: 14, repo: "sw-crp-super-app-android" },
     { url: "https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/9", number: 9, repo: "sw-crp-super-app-ios" },
   ];
-  const text = fixResultText({ status: "fixed", summary: "Ya no se frena.", tested: "Suite de Android", notTested: "iOS no se compiló" }, prs);
-  assert.match(text, /^:hammer_and_wrench: \*Corrección propuesta\*\nYa no se frena\.\n• <https:\/\/github\.com\/.+\/pull\/14\|PR #14> · sw-crp-super-app-android/);
-  assert.match(text, /\*Qué no se probó:\* iOS no se compiló/);
-  assert.match(fixResultText({ status: "no-change", summary: "Es del sistema." }, []), /^:information_source: \*Sin cambios de código\*\nEs del sistema\.$/);
+  const text = fixResultText({ status: "fixed", summary: "Ya no se frena.", tested: "Suite de Android", notTested: "iOS no se compiló." }, prs, { requester: "UDEV" });
+  assert.equal(
+    text,
+    `:hammer_and_wrench: *Corrección propuesta* · <${ANDROID_PR}|Android #14> · <https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/9|iOS #9> · <@UDEV>\n` +
+      "Ya no se frena.\n*Falta:* iOS no se compiló; el merge lo hace una persona."
+  );
+  const noChange = fixResultText({ status: "no-change", summary: "Es del sistema." }, []);
+  assert.equal(noChange, ":information_source: *Sin cambios de código*\nEs del sistema.");
+  assert.equal(noChangeVerdict([report, { ts: "1795062000.000100", bot_id: "B2", text: noChange }]).summary, "Es del sistema.");
 });
 
 test("finds mentions of the Corrector that it hasn't answered, in any thread", async () => {
@@ -216,14 +245,15 @@ test("reads the Revisor's verdict for the latest review asked of each PR", () =>
 test("the Corrector first posts its PRs as in verification, without counting as its final answer", () => {
   const prs = [{ url: ANDROID_PR, number: 14, repo: "sw-crp-super-app-android" }];
   const interim = fixResultText({ status: "in-review", summary: "Ya no se frena.", tested: "no debe salir" }, prs);
-  assert.match(interim, /^:arrows_counterclockwise: \*PR abiertos, en verificación\*\nYa no se frena\.\n• <https:.+\|PR #14>/);
+  assert.equal(interim, `:arrows_counterclockwise: *PR abiertos, en verificación* · <${ANDROID_PR}|Android #14>\nYa no se frena.`);
   assert.ok(!interim.includes("no debe salir"));
   const ack = { ts: "1795061001.000100", text: ":wrench: El *Corrector* toma esta falla de Super App Android: …" };
   const now = 1795061001 * 1000 + 60_000;
   assert.ok(fixInProgress([report, ack, { ts: "1795061100.000100", text: interim }], now));
   const final = fixResultText({ status: "fixed", summary: "Listo.", checks: "2219 pruebas OK", review: "Visto bueno en los dos PR, 2 rondas", pending: "Probar el APK release" }, prs);
-  assert.match(final, /\*Pruebas:\* 2219 pruebas OK\n\*Revisión:\* Visto bueno en los dos PR, 2 rondas/);
-  assert.match(final, /\*Pendiente para una persona:\* Probar el APK release/);
+  assert.match(final, /\n\*Pruebas:\* 2219 pruebas OK · \*Revisión:\* Visto bueno en los dos PR, 2 rondas\n/);
+  assert.match(final, /\*Falta:\* Probar el APK release; el merge lo hace una persona\.$/);
+  assert.ok(fixInProgress([report, { ts: "1795061001.000100", text: fixAckText() }], now));
   assert.ok(!fixInProgress([report, ack, { ts: "1795061100.000100", text: interim }, { ts: "1795062000.000100", text: final }], now));
 });
 

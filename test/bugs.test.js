@@ -64,12 +64,12 @@ test("a PR linked in the thread puts the bug in correction, and back to open if 
   const bug = openBug()["app:a"];
   const [fixing] = syncPrs(bug, [pr(7, "open")], 48);
   assert.equal(bug.status, "fixing");
-  assert.match(fixing.text, /^:hammer_and_wrench: \*En corrección\* con el <https:\S+\/pull\/7\|PR #7>\./);
+  assert.match(fixing.text, /^:hammer_and_wrench: \*En corrección\* · <https:\S+\/pull\/7\|PR #7>$/);
   assert.equal(syncPrs(bug, [pr(7, "open")], 48).length, 0, "no repeated notice");
 
   const [closed] = syncPrs(bug, [pr(7, "closed")], 48);
   assert.equal(bug.status, "open");
-  assert.match(closed.text, /se cerró sin fusionarse/);
+  assert.match(closed.text, /PR #7>? cerrado sin fusionar\* · la falla vuelve a abierta$/);
 });
 
 test("PRs whose GitHub state is unknown keep their last state", () => {
@@ -84,20 +84,20 @@ test("the merge is announced once and the release that includes it starts the 48
   const bug = openBug()["app:a"];
   syncPrs(bug, [pr(7, "open")], 48);
   const [merged] = syncPrs(bug, [pr(7, "merged", { mergeCommit: "abc" })], 48);
-  assert.match(merged.text, /ya está fusionado/);
+  assert.match(merged.text, /PR #7> fusionado\* · espera versión$/);
   assert.equal(syncPrs(bug, [pr(7, "merged", { mergeCommit: "abc" })], 48).length, 0);
 
   assert.equal(mergedPr(bug).number, 7);
   assert.deepEqual(markReleased(bug, { version: "1.5.6 (291)", included: false, method: "commit" }, at(2), 48), []);
   const [released] = markReleased(bug, { version: "1.5.6 (291)", included: true, method: "commit" }, at(10), 48);
-  assert.match(released.text, /^:package: \*1\.5\.6 \(291\)\* ya incluye el <\S+\|PR #7>\. Si no hay eventos/);
+  assert.match(released.text, /^:package: \*En observación\* · 1\.5\.6 \(291\) incluye el <\S+\|PR #7> · se resuelve el .+ \(CDMX\) si no hay eventos$/);
   assert.deepEqual(bug.fix, { version: "1.5.6 (291)", since: at(10).toISOString(), pr: 7, method: "commit" });
   assert.equal(mergedPr(bug), null);
 
   assert.deepEqual(resolveQuiet(bug, at(55), 48), [], "48 h count from the release, not from the last event");
   const [resolved] = resolveQuiet(bug, at(58), 48);
   assert.equal(resolved.broadcast, true);
-  assert.match(resolved.text, /^:white_check_mark: \*Resuelto\* · Super App Android · `Clasea\.metodo`\n48 h sin eventos en 1\.5\.6 \(291\), que incluye el/);
+  assert.match(resolved.text, /^:white_check_mark: \*Resuelta\* · Super App Android · `Clasea\.metodo` · 48 h sin eventos en 1\.5\.6 \(291\) con el <\S+\|PR #7>$/);
   assert.equal(bug.status, "resolved");
 });
 
@@ -105,7 +105,7 @@ test("a merged PR announced when it is first linked does not get a second merge 
   const bug = openBug()["app:a"];
   const notices = syncPrs(bug, [pr(7, "merged", { mergeCommit: "abc" })], 48);
   assert.equal(notices.length, 1);
-  assert.match(notices[0].text, /En corrección.*Ya está fusionado/);
+  assert.match(notices[0].text, /En corrección.*PR #7> \(fusionado\)$/);
 });
 
 test("48 h without events resolves an open bug, posted in its thread and in the channel", () => {
@@ -113,7 +113,7 @@ test("48 h without events resolves an open bug, posted in its thread and in the 
   assert.deepEqual(resolveQuiet(bugs["app:a"], at(47), 48), []);
   const [notice] = resolveQuiet(bugs["app:a"], at(48), 48);
   assert.deepEqual([notice.key, notice.broadcast], ["app:a", true]);
-  assert.match(notice.text, /48 h sin eventos en 1\.5\.5 \(290\)\. Nadie ligó un PR/);
+  assert.match(notice.text, /48 h sin eventos en 1\.5\.5 \(290\) · sin PR$/);
   assert.equal(bugs["app:a"].resolvedVersion, "1.5.5 (290)");
 });
 
@@ -141,13 +141,13 @@ test("events after the fixed release reopen the bug", () => {
   markReleased(bug, { version: "1.5.6 (291)", included: true, method: "commit" }, at(5), 48);
   const back = trackFailures({ "app:a": bug }, [failure("a", 1, "1.5.6 (291)")], at(6));
   assert.deepEqual(back.reopened, ["app:a"]);
-  assert.match(back.outbox[0].text, /Ya salió el <\S+\|PR #7> en 1\.5\.6 \(291\) y no la resolvió/);
+  assert.match(back.outbox[0].text, /1 evento · el <\S+\|PR #7> no la resolvió$/);
   assert.equal(back.bugs["app:a"].fix, null);
 
   const [released] = markReleased(dated, { version: "1.5.6 (291)", included: true, method: "date" }, at(5), 48);
-  assert.match(released.text, /\(por fecha: salió después de la fusión/);
+  assert.match(released.text, /probablemente incluye el <\S+\|PR #7> \(por fecha\)/);
   const unsure = trackFailures({ "app:a": dated }, [failure("a", 1, "1.5.6 (291)")], at(6));
-  assert.match(unsure.outbox[0].text, /Se esperaba el <\S+\|PR #7> en 1\.5\.6 \(291\), pero puede que esa versión no lo traiga/);
+  assert.match(unsure.outbox[0].text, /se esperaba el <\S+\|PR #7> en 1\.5\.6 \(291\); quizá esa versión no lo trae$/);
 });
 
 test("a build from another copy of the history includes the PR when it has its changes", () => {
@@ -200,14 +200,14 @@ test("the summary lists open bugs first, with their thread links", () => {
   assert.deepEqual(open.map((b) => b.key), ["app:a", "app:b"], "bugs without a thread are left out");
   open[0].ref = "CR-AAA111";
   const text = digestText(open, { now: t0, quietHours: 48, ref: "CR-DIG001", esc: neutralize });
-  assert.match(text, /^:clipboard: \*Fallas abiertas de Crashlytics\* · 2 al 18 nov\.? · 1 sin PR, 1 en corrección/);
-  assert.match(text, /`Clasea\.metodo` · 3 eventos en 24 h · desde el 18 nov\.? · sin PR · CR-AAA111\n/);
-  assert.match(text, /en corrección con el PR #7 \(fusionado, espera versión\)\n/);
+  assert.match(text, /^:clipboard: \*Crashlytics · 18 nov\.?\* · 2 activas: 1 sin PR · 1 en corrección\n/);
+  assert.match(text, /\n• CR-AAA111 · Android 1\.5\.5 · Crash · `Clasea\.metodo` · 3 eventos\/24 h · \*sin PR\*\n/);
+  assert.match(text, /· PR #7 fusionado\n/);
   assert.doesNotMatch(text, /<|Ref\. CR-AAA111/, "Cursor posts it: no link markup, and only its own Ref.");
-  assert.match(text, /tras 48 h sin eventos\._\n:thread: Enlaces a cada hilo en este hilo\. · Ref\. CR-DIG001$/);
+  assert.match(text, /\nEnlaces en el hilo · Ref\. CR-DIG001$/);
 
   const links = digestLinksText(open, { "app:a": "https://slack.example/p1" });
-  assert.equal(links, ":link: *Hilos de las fallas abiertas*\n• <https://slack.example/p1|CR-AAA111> · Super App Android · `Clasea.metodo`");
+  assert.equal(links, ":link: <https://slack.example/p1|CR-AAA111>");
   assert.equal(digestLinksText(open, {}), null);
 });
 
@@ -240,21 +240,21 @@ test("a bug the Corrector found needs no code change is in review, not open, unt
   const verdict = noChangeVerdict([ask, noChange]);
   const [notice] = markReviewed(bug, verdict, 48);
   assert.equal(bug.status, "watching");
-  assert.match(notice.text, /^:eye: \*En revisión\* · El Corrector no encontró un cambio de código/);
+  assert.match(notice.text, /^:eye: \*En revisión\* · sin cambio de código por ahora · se resuelve tras 48 h sin eventos; reabre si aparece en otra versión$/);
   assert.deepEqual(markReviewed(bug, verdict, 48), [], "only once");
 
   const same = trackFailures({ "app:a": bug }, [failure("a", 2)], at(5));
   assert.equal(same.bugs["app:a"].status, "watching", "more events in the same version keep it in review");
   assert.deepEqual(same.outbox, []);
   const summary = digestText(digestBugs({ ...openBug(), "app:b": { ...same.bugs["app:a"], key: "app:b" } }), { now: at(6), quietHours: 48 });
-  assert.match(summary, /1 sin PR, 0 en corrección, 1 en revisión/);
-  assert.match(summary, /en revisión: el Corrector no encontró cambio de código/);
+  assert.match(summary, /1 sin PR · 0 en corrección · 1 en revisión\n/);
+  assert.match(summary, /eventos?\/24 h · en revisión\n/);
   assert.ok(resolveQuiet(structuredClone(same.bugs["app:a"]), at(60), 48).length, "it still resolves after the quiet hours");
 
   const back = trackFailures(same.bugs, [failure("a", 1, "1.5.6 (291)")], at(7));
   const reopened = back.bugs["app:a"];
   assert.deepEqual([back.reopened, reopened.status], [["app:a"], "open"]);
-  assert.match(back.outbox[0].text, /El Corrector la había revisado en 1\.5\.5 \(290\) sin encontrar un cambio de código/);
+  assert.match(back.outbox[0].text, /el Corrector la había revisado en 1\.5\.5 \(290\) sin cambio de código$/);
   reopened.reopenedAt = at(7).toISOString();
   assert.deepEqual(markReviewed(reopened, verdict, 48), [], "the old conclusion doesn't apply after it reopens");
 

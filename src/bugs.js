@@ -111,7 +111,7 @@ export function syncPrs(bug, prs, quietHours) {
     bug.status = "fixing";
     const pr = active.find((p) => p.state === "merged") ?? active[0];
     if (pr.state === "merged") pr.mergedNotified = true;
-    out.push(notice(bug, bugFixingText(pr, quietHours)));
+    out.push(notice(bug, bugFixingText(pr)));
   } else if (bug.status === "fixing" && !active.length && bug.prs.length) {
     bug.status = "open";
     out.push(notice(bug, bugPrClosedText(bug.prs.at(-1))));

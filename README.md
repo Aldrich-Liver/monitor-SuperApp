@@ -13,20 +13,19 @@ Funciona con seis automatizaciones de Cursor en el environment **Super App**:
 
 ```
 :rotating_light: Falla nueva en Super App Android 1.5.5 (290) · No fatal · ArranqueAnfitrion$PasoArranqueExcedido.<init>
-> rt - El paso de arranque 'remote_config' no terminó en 15s
-5 eventos · 16 usuarios · desde 1.5.2
-:thread: Detalle, solución propuesta y seguimiento en el hilo. · Ref. CR-4B7DFB
-   └ :mag: @Analista Crashlytics, revisa esta falla contra el código del release y responde en este hilo…
-   └ Super App Android 1.5.5 (290) · No fatal
-     Dónde: ArranqueAnfitrion.protegido-dWUq8MI (ArranqueAnfitrion.kt:55)
+5 eventos · 16 usuarios · desde 1.5.2 · Ref. CR-4B7DFB
+   └ :mag: @Analista Crashlytics, analiza esta falla.
+   └ Super App Android 1.5.5 (290) · No fatal · ArranqueAnfitrion.kt:55 · Ver en Crashlytics
+     > rt - El paso de arranque 'remote_config' no terminó en 15s
      Qué está pasando: Al abrir la app, la configuración remota tarda más de 15 s…
      Solución propuesta: …
+     ¿La corregimos? @Cursor corrige esta falla
    └ @dev: Lo tomo, aquí el PR https://github.com/…/pull/14 @Cursor revisa este PR
-   └ :hammer_and_wrench: En corrección con el PR #14. Aviso aquí cuando salga en una versión…
-   └ :white_check_mark: Revisión del PR #14 …
-   └ :twisted_rightwards_arrows: El PR #14 ya está fusionado. Aviso aquí cuando salga en una versión.
-   └ :package: 1.5.6 (291) ya incluye el PR #14. Si no hay eventos de esta falla hasta el 22 nov, 10:00 (hora CDMX), la doy por resuelta.
-   └ :white_check_mark: Resuelto · Super App Android · ArranqueAnfitrion$PasoArranqueExcedido.<init>   ← también aparece en el canal
+   └ :hammer_and_wrench: En corrección · PR #14
+   └ :white_check_mark: Visto bueno · PR #14 · @dev
+   └ :twisted_rightwards_arrows: PR #14 fusionado · espera versión
+   └ :package: En observación · 1.5.6 (291) incluye el PR #14 · se resuelve el 22 nov, 10:00 a.m. (CDMX) si no hay eventos
+   └ :white_check_mark: Resuelta · Super App Android · ArranqueAnfitrion$PasoArranqueExcedido.<init> · 48 h sin eventos en 1.5.6 (291) con el PR #14   ← también aparece en el canal
 ```
 
 ## Cómo decide qué reportar
@@ -40,7 +39,7 @@ Funciona con seis automatizaciones de Cursor en el environment **Super App**:
 
 ## Un hilo por falla
 
-Cada issue de Crashlytics es una falla con su propio hilo, y todo lo que pasa con ella va ahí. Todo mensaje nuevo del canal lo publica Cursor: el que abre cada falla, el resumen de la mañana y los avisos de versión o de error. Los bots del monitor, el Analista y el Revisor solo responden en hilos; en el canal principal solo se ven, como respuestas del hilo que también se muestran en el canal (sin mensaje nuevo), los avisos de *Resuelto* y *Volvió a aparecer*.
+Cada issue de Crashlytics es una falla con su propio hilo, y todo lo que pasa con ella va ahí. Todo mensaje nuevo del canal lo publica Cursor: el que abre cada falla, el resumen de la mañana y los avisos de versión o de error. Los bots del monitor, el Analista y el Revisor solo responden en hilos; en el canal principal solo se ven, como respuestas del hilo que también se muestran en el canal (sin mensaje nuevo), los avisos de *Resuelta* y *Volvió a aparecer*.
 
 | Estado | Cuándo |
 |---|---|
@@ -106,20 +105,18 @@ Cada PR que se abre en `sw-crp-super-app-android` o `sw-crp-super-app-ios` (o un
 Después pide la revisión con `npm run review:request -- <URL> --via github`, igual que si alguien hubiera arrobado a Cursor. Los commits nuevos no piden otra revisión; para eso se arroba a Cursor en el hilo.
 
 ```
-:arrow_heading_up: PR nuevo en Super App Android · #14 · Arranque: la inscripción a notificaciones ya no frena el arranque
-https://github.com/…/pull/14 · `fix/arranque-notificaciones` · de dev
-:link: Gemelo en iOS: https://github.com/…/pull/9
-:thread: Revisión y pruebas en el hilo.
-   └ :eyes: Reviso el PR #14 de Super App Android con los lineamientos…
-   └ :white_check_mark: Pruebas OK · PR #14 de Super App Android · `3f2a9c1` · 2217 pruebas · lint sin errores nuevos (4 previos en archivos que el PR no toca) · 4 min
-   └ :white_check_mark: Visto bueno · PR #14 …
+:arrow_heading_up: PR nuevo · Super App Android #14 · Arranque: la inscripción a notificaciones ya no frena el arranque · de dev
+https://github.com/…/pull/14 · gemelo iOS: https://github.com/…/pull/9
+   └ :eyes: Revisando el PR #14…
+   └ :white_check_mark: Pruebas OK · PR #14 · `3f2a9c1` · 2217 pruebas · lint sin errores nuevos · 4 min
+   └ :white_check_mark: Visto bueno · PR #14 · @dev
 ```
 
 ## Pruebas de PRs
 
 Al abrir un PR de Android y con cada commit nuevo, `npm run tests:run` lo descarga en un worktree aparte (`.tester/worktree`) y corre `./gradlew --no-daemon --continue :app:testDevDebugUnitTest :app:lintDevDebug`. Tarda unos 5 minutos; a los 15 se detiene (`AGENTS.md` §5.7) y lo reporta. Hay que tener en cuenta lo siguiente:
 
-- **Lint:** `main` ya tiene errores de lint, así que solo cuentan los que caen en archivos que el PR toca. Los demás se mencionan como previos.
+- **Lint:** `main` ya tiene errores de lint, así que solo cuentan los que caen en archivos que el PR toca.
 - **Resultado:** `Pruebas OK`, `Pruebas fallidas` (con las pruebas y los errores de lint nuevos), `No compila` (con los primeros errores del compilador) o `Pruebas detenidas` si pasó el límite.
 - **Commits seguidos:** si llega un commit mientras corren las pruebas, `tests:reply` no publica el resultado viejo; lo hace la corrida del commit nuevo.
 - **Dónde se publica:** como comentario del PR en GitHub y como respuesta en su hilo de Slack, si tiene uno.
@@ -151,7 +148,7 @@ El Corrector no termina al abrir los PR: lleva la falla hasta dejar los PR listo
    1. Espera con `tests:wait` el resultado que la automatización Pruebas de PRs publica en el hilo para su último commit (GitHub la activa al abrir el PR y con cada push). Si no llega en 25 minutos, corre `tests:run` él mismo. Corrige en su rama lo que falle.
    2. Pide la revisión a la automatización Revisor de PRs con `review:request --thread` y espera su veredicto con `review:wait`, hasta 30 minutos.
    3. Si el Revisor pide cambios, atiende los puntos válidos, hace push en la misma rama y empieza otra ronda. En la tercera ya no cambia código.
-   4. Los puntos que contradicen los lineamientos no se hacen; quedan en *Pendiente para una persona*.
+   4. Los puntos que contradicen los lineamientos no se hacen; quedan en *Falta*, lo que le toca a una persona.
 3. **Responde una sola vez al final**, con la causa, los PR, el resultado de las pruebas, el veredicto del Revisor, qué no se probó y lo que queda para una persona.
 
 El Corrector no repite el trabajo de las demás automatizaciones, las usa:
@@ -167,21 +164,17 @@ El que decide qué falta y no suelta la falla es el Corrector.
 
 ```
    └ @dev: @Cursor corrige esta falla
-   └ :wrench: El Corrector toma esta falla de Super App Android: busca la causa en el código, la corrige en Android y en iOS y responde aquí con los PR.
-   └ :arrows_counterclockwise: PR abiertos, en verificación
+   └ :wrench: El Corrector toma esta falla. Aviso aquí con los PR.
+   └ :arrows_counterclockwise: PR abiertos, en verificación · Android #14 · iOS #9
      La inscripción a notificaciones se espera en paralelo y el aviso ya no se envía sin red o en segundo plano.
-     • PR #14 · sw-crp-super-app-android
-     • PR #9 · sw-crp-super-app-ios
-   └ :hammer_and_wrench: En corrección con el PR #14…
+   └ :hammer_and_wrench: En corrección · PR #14
    └ :white_check_mark: Pruebas OK · PR #14 …                      ← Pruebas de PRs
-   └ :eyes: Reviso el PR #14 … / :warning: Cambios necesarios · PR #14 …
-   └ :eyes: Reviso el PR #14 … / :white_check_mark: Visto bueno · PR #14 …
-   └ :hammer_and_wrench: Corrección propuesta
-     • PR #14 · sw-crp-super-app-android
-     • PR #9 · sw-crp-super-app-ios
-     Pruebas: 2219 pruebas OK, sin errores de lint nuevos.
-     Revisión: Visto bueno en los dos PR, en 2 rondas.
-     Qué no se probó: iOS no se compiló; los agentes en la nube corren en Linux.
+   └ :eyes: Revisando el PR #14… / :warning: Cambios necesarios · PR #14 · 2 puntos …
+   └ :eyes: Revisando el PR #14… / :white_check_mark: Visto bueno · PR #14 …
+   └ :hammer_and_wrench: Corrección propuesta · Android #14 · iOS #9 · @dev
+     La inscripción a notificaciones se espera en paralelo…
+     Pruebas: 2219 pruebas OK, sin errores de lint nuevos. · Revisión: Visto bueno en los dos PR, en 2 rondas.
+     Falta: iOS no se compiló; los agentes en la nube corren en Linux; el merge lo hace una persona.
 ```
 
 ## Requisitos

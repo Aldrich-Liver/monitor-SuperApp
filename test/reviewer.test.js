@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { reviewAckText, reviewText } from "../src/format.js";
+import { reviewAckText, reviewText, reviewerUnavailableText } from "../src/format.js";
 import { applicableGuidelines, globToRegExp, guidelineKind, ruleMeta } from "../src/reviewer/guidelines.js";
 import { appForRepo, mentionsPr, parsePr, prUrls, twinRepo } from "../src/reviewer/pr.js";
 import { reviewPayload } from "../src/reviewer/requests.js";
@@ -192,24 +192,24 @@ test("the payload names who asked, but not when a bot asked", () => {
 test("formats the verdict for the thread", () => {
   const context = { pr: { ...pr, title: "Agenda de citas", headBranch: "feat/agenda" }, app: "Super App iOS", requested_by: "UDEV" };
   const ok = reviewText(context, { verdict: "approve", summary: "Sube el tiempo de espera <15s>.", fixesFailure: "Sí.", meetsGoal: "Sí.", items: [], githubPosted: true });
-  assert.match(ok, /^:white_check_mark: \*Visto bueno\* · <https:\/\/github\.com\/Aldrich-Liver\/sw-crp-super-app-ios\/pull\/7\|PR #7> · Super App iOS · _Agenda de citas_ · `feat\/agenda`\n/);
-  assert.match(ok, /<@UDEV> Sube el tiempo de espera &lt;15s&gt;\./);
-  assert.match(ok, /¿Corrige la falla del hilo\?\* Sí\./);
-  assert.doesNotMatch(ok, /Cumple su objetivo/);
-  assert.match(ok, /La revisión también quedó en el PR de GitHub/);
+  assert.equal(
+    ok,
+    ":white_check_mark: *Visto bueno* · <https://github.com/Aldrich-Liver/sw-crp-super-app-ios/pull/7|PR #7> · <@UDEV>\nSube el tiempo de espera &lt;15s&gt;.\n*¿Corrige la falla?* Sí."
+  );
   assert.match(reviewText(context, { verdict: "approve", meetsGoal: "Sí, agrega la agenda." }), /¿Cumple su objetivo\?\* Sí, agrega la agenda\./);
   assert.match(
     reviewText(context, { verdict: "approve", summary: "Listo.", previous: "Los 2 puntos se corrigieron.", fixesFailure: "Sí." }),
-    /Listo\.\n\*Revisión anterior:\* Los 2 puntos se corrigieron\.\n\*¿Corrige la falla del hilo\?\*/
+    /\n_Ronda anterior:_ Los 2 puntos se corrigieron\.\nListo\.\n\*¿Corrige la falla\?\*/
   );
 
   const items = Array.from({ length: 8 }, (_, i) => ({ file: "A.swift", line: i + 1, problem: `p${i}`, suggestion: "s", guideline: "AGENTS.md §2.1" }));
-  const changes = reviewText(context, { verdict: "changes", summary: "Falta el gemelo.", items });
-  assert.match(changes, /:warning: \*Cambios necesarios\*/);
-  assert.match(changes, /1\. `A\.swift:1` · p0\n   _Sugerencia:_ s\n   _Lineamiento:_ AGENTS\.md §2\.1/);
-  assert.match(changes, /_y 2 más en el PR\._/);
-  assert.doesNotMatch(changes, /GitHub\._$/);
+  const changes = reviewText(context, { verdict: "changes", summary: "Falta el gemelo.", items, githubPosted: true });
+  assert.match(changes, /^:warning: \*Cambios necesarios\* · <\S+\|PR #7> · 8 puntos · <@UDEV>\n1\. `A\.swift:1` p0: s\n/);
+  assert.doesNotMatch(changes, /Falta el gemelo|AGENTS\.md/, "the summary and guidelines stay in the PR when there are items");
+  assert.match(changes, /_y 2 más en el PR\._\n_Sugerencias y lineamientos en el PR\._$/);
+  assert.match(reviewText(context, { verdict: "changes", items: [{ file: "src/A.swift", problem: "Usa GlobalScope.", suggestion: "Usa el scope inyectado." }] }), /\n1\. `A\.swift` Usa GlobalScope: usa el scope inyectado\.$/);
 
-  assert.match(reviewText(context, { verdict: "error", summary: "No tengo acceso." }), /^:x: \*No pude revisar el\* <.*\|PR #7>: No tengo acceso\.$/);
-  assert.match(reviewAckText({ pr, app: "Super App iOS", requester: "UDEV" }), /^:eyes: <@UDEV> Reviso el <.*\|PR #7> de Super App iOS/);
+  assert.match(reviewText(context, { verdict: "error", summary: "No tengo acceso." }), /^:x: \*No pude revisar el\* <.*\|PR #7> · No tengo acceso\.$/);
+  assert.match(reviewAckText({ pr }), /^:eyes: Revisando el <.*\|PR #7>…$/);
+  assert.equal(reviewerUnavailableText("HTTP 401 del webhook"), ":warning: No se pudo activar al Revisor de PRs · su webhook rechazó la llamada. Avísale a quien administra las automatizaciones.");
 });
