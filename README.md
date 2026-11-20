@@ -66,17 +66,16 @@ Sirve para cualquier PR de `sw-crp-super-app-android` o `sw-crp-super-app-ios`: 
 - **Arrobando a Cursor:** `@Cursor revisa este PR https://github.com/…/pull/12`, solo para quien tiene su cuenta de Slack vinculada al equipo de Cursor. Cursor lee [`AGENTS.md`](AGENTS.md) y ejecuta `npm run review:request -- <URL>`.
 - **Desde otra automatización:** `npm run review:request -- <URL> --thread <ts del hilo>`, o un POST al webhook del Revisor con el payload que imprime `npm run review:request -- <URL> --dry-run`.
 
-Responde siempre en un hilo: el del mensaje que lo pidió, o uno nuevo debajo de él si se pidió en el canal principal. Primero avisa que empezó (`:eyes:`) y después publica el veredicto:
+Responde siempre en un hilo: el del mensaje que lo pidió, o uno nuevo debajo de él si se pidió en el canal principal. Primero avisa que empezó (`:eyes:`) y después publica el veredicto. El detalle de cada punto (qué está mal, qué cambiar y el lineamiento) va en la revisión del PR de GitHub; en el hilo solo dice qué archivos corregir:
 
 ```
-:warning: Cambios necesarios · PR #12 · Super App Android · Agenda de citas en Clienteling · feat/agenda-citas
-@quien-pidió Agrega la agenda de citas, pero el ViewModel llama directo al repositorio remoto.
-¿Cumple su objetivo? Parcialmente: la agenda funciona, pero falta el PR gemelo de iOS.
-1. ClientelingViewModel.kt:88 · La presentación usa Datos/ directamente…
-   Sugerencia: …
-   Lineamiento: AGENTS.md §3.4
-La revisión también quedó en el PR de GitHub.
+:warning: Cambios necesarios · PR #12 · 2 puntos · @quien-pidió
+1. ClientelingViewModel.kt:88
+2. AgendaScreen.kt:41
+Detalle en el PR.
 ```
+
+Si no pudo publicar en GitHub, el hilo trae el detalle completo de cada punto.
 
 ### En qué se apoya
 
