@@ -39,6 +39,8 @@ Los dos funcionan, pero no tardan lo mismo:
 - **@Cursor**: la petición se atiende en 1 o 2 minutos. **Úsalo siempre.**
 - **@Revisor de PRs** o **@Corrector de fallas**: el bot no recibe los mensajes al momento. Los encuentra el monitor en su revisión de cada hora, así que puede tardar **hasta 60 minutos** en empezar.
 
+Para usar @Cursor, tu usuario de Slack debe estar vinculado a una cuenta del equipo de Cursor. Si Cursor te contesta *"You can launch Cursor agents directly from Slack. Click the Link Account button…"*, todavía no lo está: toca **Link Account** y entra con tu cuenta del equipo. Si no tienes cuenta, pídela a quien administra las automatizaciones y, mientras tanto, arroba al bot (@Revisor de PRs o @Corrector de fallas). No repitas la petición: el monitor la toma en su siguiente revisión.
+
 Si Cursor contesta con un mensaje corto o con "Open it in Cursor", no pasa nada: la respuesta que cuenta es la del Revisor o la del Corrector.
 
 ## Cuánto esperar
