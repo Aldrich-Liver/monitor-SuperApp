@@ -2,6 +2,8 @@
 
 Revisa cada hora la última versión de Super App y Contacto Logístico (Android e iOS) en el proyecto de Firebase `crp-dev-dig-superapp` y lleva cada falla (crash, no fatal o ANR) en su propio hilo de `#team-mobile`, desde que aparece hasta que se resuelve. Si no hay nada nuevo, no publica nada.
 
+Para el equipo: cómo pedir revisiones y correcciones, y cuánto esperar, en [COMO-USAR.md](COMO-USAR.md).
+
 Funciona con seis automatizaciones de Cursor en el environment **Super App**:
 
 1. **Monitor Crashlytics**, programada cada hora. `npm run check` lee Crashlytics, `npm run bugs` lleva el seguimiento de cada falla y `npm run render` escribe un mensaje por cada falla nueva y, cada mañana, el resumen de las fallas abiertas, que Cursor publica con la herramienta Send to Slack. Luego `npm run notify` encuentra cada mensaje por su `Ref. CR-…`, abre su hilo, arroba al Analista y lo activa por webhook, publica los avisos de seguimiento y responde bajo el resumen con los enlaces a cada hilo.
