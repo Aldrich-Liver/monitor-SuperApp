@@ -15,7 +15,7 @@ Funciona con seis automatizaciones de Cursor en el environment **Super App** y u
 
 Y además:
 
-- **Agentes de `#team-mobile`** (`bot/`), un agente del Agent SDK de Cursor alojado en Cursor. Escucha por Socket Mode las menciones a `@Revisor de PRs`, `@Corrector de fallas` y `@Pruebas de PRs` y, en cuanto llegan, activa por webhook la automatización que corresponde. No usa el modelo ni pide cuenta de Cursor a quien escribe: las automatizaciones corren con la cuenta de su dueño. Ver [Bots en Slack](#bots-en-slack).
+- **Agentes de `#team-mobile`** (`agentes/`), tres agentes del Agent SDK de Cursor alojados en Cursor, uno por bot. Reciben las menciones a `@Revisor de PRs`, `@Corrector de fallas` y `@Pruebas de PRs` y, en cuanto llegan, activa por webhook la automatización que corresponde. No usa el modelo ni pide cuenta de Cursor a quien escribe: las automatizaciones corren con la cuenta de su dueño. Ver [Bots en Slack](#bots-en-slack).
 
 ```
 :rotating_light: Falla nueva en Super App Android 1.5.5 (290) · No fatal · ArranqueAnfitrion$PasoArranqueExcedido.<init>
@@ -186,7 +186,7 @@ El que decide qué falta y no suelta la falla es el Corrector.
 
 ## Bots en Slack
 
-Los bots de Slack no reciben mensajes por sí solos. El agente de `bot/` los conecta: abre una conexión de Socket Mode por bot, así que funciona en canales privados y no necesita una URL pública. Cuando alguien arroba a uno de ellos, el agente ejecuta el código de `src/mentions.js`, sin abrir un turno del modelo:
+Los bots de Slack no reciben mensajes por sí solos. Cada uno es la app de Slack de un agente de `agentes/` (`revisor`, `corrector` y `pruebas`), alojado en Cursor. Cursor administra esas apps y les entrega las menciones, también en canales privados y sin URL pública; en Cursor hosting no se usan apps propias con Socket Mode. Cuando alguien arroba a uno de ellos, el agente ejecuta el código de `src/mentions.js`, sin abrir un turno del modelo:
 
 | Mención | Qué hace |
 |---|---|
@@ -344,28 +344,28 @@ Opcional: crea la app de Slack con los pasos del bot, usando [`slack/tester-mani
 
 ### 8. Agentes de `#team-mobile` (bots al instante)
 
-1. **Socket Mode en cada bot.** En [api.slack.com/apps](https://api.slack.com/apps), para *Revisor de PRs*, *Corrector de fallas* y *Pruebas de PRs*:
-   - En **App Manifest**, pega el de [`slack/`](slack/) (`reviewer`, `fixer` y `tester-manifest.json`). Activa Socket Mode, se suscribe a `app_mention` y agrega los permisos `app_mentions:read`, `channels:history` y `groups:history`. Reinstala la app cuando Slack lo pida; el bot token no cambia.
-   - En **Basic Information > App-Level Tokens**, genera un token con el permiso `connections:write` (`xapp-…`).
-   - Si *Pruebas de PRs* no existe todavía, créala con los pasos del bot e invítala con `/invite @Pruebas de PRs`.
-2. **Webhook de Pruebas de PRs.** En su automatización agrega un disparador **Webhook**, además de los de GitHub, y copia su URL y llave a `TESTER_WEBHOOK_URL` y `TESTER_WEBHOOK_KEY`.
-3. **Despliega el agente** desde este repo, con Node 22:
+Cada bot es la app de Slack de su agente, creada y administrada por Cursor. Reemplazan a las apps *Revisor de PRs*, *Corrector de fallas* y *Pruebas de PRs* que se crearon a mano.
+
+1. **Webhook de Pruebas de PRs.** En su automatización agrega un disparador **Webhook**, además de los de GitHub, y copia su URL y llave a `TESTER_WEBHOOK_URL` y `TESTER_WEBHOOK_KEY`.
+2. **Cada agente**, con Node 22. Para `revisor` (nombre del bot *Revisor de PRs*, secretos `REVIEWER_WEBHOOK_URL` y `REVIEWER_WEBHOOK_KEY`), `corrector` (*Corrector de fallas*, `FIXER_…`) y `pruebas` (*Pruebas de PRs*, `TESTER_…`):
 
    ```bash
+   cd agentes/revisor
    npm install
-   npx agent-sdk login
-   npx agent-sdk validate --dir .
-   npx agent-sdk deploy --dir . --slug agentes-team-mobile
+   npx agent-sdk login                       # solo la primera vez
+   npx agent-sdk slack create --env prod --dir . --name "Revisor de PRs"
+   npx agent-sdk deploy --dir . --slug revisor-de-prs
+   npx agent-sdk secret set revisor-de-prs REVIEWER_WEBHOOK_URL
+   npx agent-sdk secret set revisor-de-prs REVIEWER_WEBHOOK_KEY
    ```
 
-4. **Secretos del agente.** Uno por uno, con `npx agent-sdk secret set agentes-team-mobile <NOMBRE>` (pide el valor sin mostrarlo):
-   - `REVISOR_SLACK_BOT_TOKEN` y `REVISOR_SLACK_APP_TOKEN`: el `xoxb-…` y el `xapp-…` del Revisor.
-   - `CORRECTOR_SLACK_BOT_TOKEN` y `CORRECTOR_SLACK_APP_TOKEN`: los del Corrector.
-   - `PRUEBAS_SLACK_BOT_TOKEN` y `PRUEBAS_SLACK_APP_TOKEN`: los de Pruebas de PRs.
-   - `REVIEWER_WEBHOOK_URL`, `REVIEWER_WEBHOOK_KEY`, `FIXER_WEBHOOK_URL`, `FIXER_WEBHOOK_KEY`, `TESTER_WEBHOOK_URL` y `TESTER_WEBHOOK_KEY`: los mismos valores de Cloud Agents > Secrets.
-5. **Comprueba.** `npx agent-sdk logs --prod --slug agentes-team-mobile` debe mostrar `Socket Mode connected` por cada bot. Arroba al Revisor en el hilo de un PR: el `:eyes:` debe aparecer en segundos.
+   `slack create` abre el asistente en el navegador: aprueba la app y confirma el nombre. Guarda los tokens del bot en `.env.local` (no se sube a git) y en el agente. Si Slack pide aprobación de un administrador, deja el comando corriendo y abre el enlace *Request approval* que imprime.
+3. **Invita los bots nuevos** al canal: `/invite @Revisor de PRs`, `/invite @Corrector de fallas` y `/invite @Pruebas de PRs`.
+4. **Que las automatizaciones respondan con los bots nuevos.** En **Cloud Agents > Secrets**, cambia `SLACK_REVIEWER_BOT_TOKEN`, `SLACK_FIXER_BOT_TOKEN` y `SLACK_TESTER_BOT_TOKEN` por el `…_SLACK_BOT_TOKEN` del `.env.local` de `revisor`, `corrector` y `pruebas`. Así el aviso, el veredicto y la respuesta salen del mismo bot que arrobaron, y `review:scan` y `fix:scan` reconocen sus respuestas.
+5. **Quita las apps viejas** en [api.slack.com/apps](https://api.slack.com/apps) (**Settings > Basic Information > Delete App**), para que no haya dos bots con el mismo nombre.
+6. **Comprueba.** Arroba a `@Revisor de PRs` en el hilo de un PR: el `:eyes:` debe aparecer en segundos. `npx agent-sdk logs --prod --slug revisor-de-prs --once` muestra `[REVISOR] … petición(es) activada(s)`.
 
-El agente solo puede llamar a los hosts de `hosting.egressDomains` en [`bot/agent.ts`](bot/agent.ts) (Slack ya viene incluido). Los webhooks de las automatizaciones están en `api2.cursor.sh`. Si alguno cambia de host y la activación falla, agrega su host ahí y vuelve a desplegar.
+Cada agente solo puede llamar a los hosts de `hosting.egressDomains` de su `bot/agent.ts` (Slack ya viene incluido). Los webhooks de las automatizaciones están en `api2.cursor.sh`; si alguno cambia de host, agrégalo ahí y vuelve a desplegar.
 
 Todos los secretos van en **Cloud Agents > Secrets** como Runtime Secret, disponibles para el environment Super App.
 
