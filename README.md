@@ -353,17 +353,17 @@ Cada bot es la app de Slack de su agente, creada y administrada por Cursor. Reem
    cd agentes/revisor
    npm install
    npx agent-sdk login                       # solo la primera vez
+   npx agent-sdk deploy --dir . --slug revisor
+   npx agent-sdk secret set revisor REVIEWER_WEBHOOK_URL
+   npx agent-sdk secret set revisor REVIEWER_WEBHOOK_KEY
    npx agent-sdk slack create --env prod --dir . --name "Revisor de PRs"
-   npx agent-sdk deploy --dir . --slug revisor-de-prs
-   npx agent-sdk secret set revisor-de-prs REVIEWER_WEBHOOK_URL
-   npx agent-sdk secret set revisor-de-prs REVIEWER_WEBHOOK_KEY
    ```
 
-   `slack create` abre el asistente en el navegador: aprueba la app y confirma el nombre. Guarda los tokens del bot en `.env.local` (no se sube a git) y en el agente. Si Slack pide aprobación de un administrador, deja el comando corriendo y abre el enlace *Request approval* que imprime.
+   El slug tiene que ser el nombre de la carpeta (`revisor`, `corrector` o `pruebas`), y el agente tiene que estar desplegado antes de `slack create`: si no, el asistente dice *Deployment not found*. Al conectar Slack el agente se vuelve a desplegar solo. `slack create` abre el asistente en el navegador: aprueba la app y confirma el nombre. Guarda los tokens del bot en `.env.local` (no se sube a git) y en el agente. Si Slack pide aprobación de un administrador, deja el comando corriendo y abre el enlace *Request approval* que imprime.
 3. **Invita los bots nuevos** al canal: `/invite @Revisor de PRs`, `/invite @Corrector de fallas` y `/invite @Pruebas de PRs`.
 4. **Que las automatizaciones respondan con los bots nuevos.** En **Cloud Agents > Secrets**, cambia `SLACK_REVIEWER_BOT_TOKEN`, `SLACK_FIXER_BOT_TOKEN` y `SLACK_TESTER_BOT_TOKEN` por el `…_SLACK_BOT_TOKEN` del `.env.local` de `revisor`, `corrector` y `pruebas`. Así el aviso, el veredicto y la respuesta salen del mismo bot que arrobaron, y `review:scan` y `fix:scan` reconocen sus respuestas.
 5. **Quita las apps viejas** en [api.slack.com/apps](https://api.slack.com/apps) (**Settings > Basic Information > Delete App**), para que no haya dos bots con el mismo nombre.
-6. **Comprueba.** Arroba a `@Revisor de PRs` en el hilo de un PR: el `:eyes:` debe aparecer en segundos. `npx agent-sdk logs --prod --slug revisor-de-prs --once` muestra `[REVISOR] … petición(es) activada(s)`.
+6. **Comprueba.** Arroba a `@Revisor de PRs` en el hilo de un PR: el `:eyes:` debe aparecer en segundos. `npx agent-sdk logs --prod --slug revisor --once` muestra `[REVISOR] … petición(es) activada(s)`.
 
 Cada agente solo puede llamar a los hosts de `hosting.egressDomains` de su `bot/agent.ts` (Slack ya viene incluido). Los webhooks de las automatizaciones están en `api2.cursor.sh`; si alguno cambia de host, agrégalo ahí y vuelve a desplegar.
 
