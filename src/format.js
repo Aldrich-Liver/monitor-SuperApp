@@ -385,6 +385,25 @@ export function twinMissingText(twin) {
 }
 
 /** Starts with "El *Corrector* toma esta falla", which marks the bug as taken so a second request waits. */
+export function testsAckText({ pr }) {
+  return `:test_tube: Corriendo pruebas y lint del ${prLink(pr)}… Respondo aquí en unos 5 a 10 min.`;
+}
+
+export function testerUnavailableText(reason) {
+  return unavailableText("Pruebas de PRs", reason);
+}
+
+/** What a bot answers when a mention brings nothing it can act on. */
+export function mentionHelpText(kind, apps = []) {
+  if (kind === "reviewer") {
+    return ":information_source: Pega el enlace del PR en tu mensaje, o escríbeme en el hilo del PR: `@Revisor de PRs revisa este PR <enlace>`.";
+  }
+  if (kind === "tester") {
+    return `:information_source: Pega el enlace del PR en tu mensaje, o escríbeme en el hilo del PR. Solo pruebo PRs de ${apps.join(" o ")}.`;
+  }
+  return ":information_source: Escríbeme en el hilo de la falla: `@Corrector de fallas corrige esta falla`.";
+}
+
 export function fixAckText() {
   return ":wrench: El *Corrector* toma esta falla. Aviso aquí con los PR.";
 }
