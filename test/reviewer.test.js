@@ -157,6 +157,17 @@ test("a request in the main channel is answered in a thread under it", async () 
   assert.deepEqual(pending.map((p) => p.thread_ts), [ask.ts]);
 });
 
+test("the Revisor's answer to one PR does not count for another PR asked in the same thread", async () => {
+  const ANDROID_URL = "https://github.com/Aldrich-Liver/sw-crp-super-app-android/pull/9";
+  const parent = msg(recent(200), { reply_count: 4, latest_reply: recent(20) });
+  const askAndroid = msg(recent(60), { user: "UDEV", text: `<@UREV> revisa <${ANDROID_URL}>` });
+  const askIos = msg(recent(50), { user: "UDEV", text: `<@UREV> y el de iOS <${PR_URL}>` });
+  const verdict = msg(recent(20), { user: "UREV", bot_id: "BREV", text: `:warning: *Cambios necesarios* · <${ANDROID_URL}|PR #9>` });
+  const slack = fakeSlack({ top: [parent], threads: { [parent.ts]: [parent, askAndroid, askIos, verdict] } });
+  const pending = await pendingMentions(slack, reviewer, { now: NOW });
+  assert.deepEqual(pending.map((p) => [p.request.ts, p.prs.map((x) => x.number)]), [[askIos.ts, [7]]]);
+});
+
 test("picks up mentions of the reviewer bot that it has not answered", async () => {
   const a = msg(recent(120), { reply_count: 2, latest_reply: recent(30) });
   const b = msg(recent(110), { reply_count: 2, latest_reply: recent(20) });

@@ -69,11 +69,22 @@ export async function findPrThread(slack, pr, { hours = 48, now = Date.now() } =
   return best;
 }
 
-/** Whether the reviewer bot already answered in the thread after the request. */
+const fromBot = (m, bot) => m.user === bot.userId || (bot.botId && m.bot_id === bot.botId);
+
+/** Whether the bot already answered in the thread after the request. */
 export function answered(messages, request, reviewer) {
-  return messages.some(
-    (m) => Number(m.ts) > Number(request.ts) && (m.user === reviewer.userId || (reviewer.botId && m.bot_id === reviewer.botId))
-  );
+  return messages.some((m) => Number(m.ts) > Number(request.ts) && fromBot(m, reviewer));
+}
+
+/**
+ * Whether the Revisor answered after the request about every PR it links. Its answer to another
+ * PR asked earlier in the same thread does not count for this one; a notice that links no PR, like
+ * "Solo reviso PRs de…", answers them all.
+ */
+export function answeredEveryPr(messages, request, reviewer) {
+  const later = messages.filter((m) => Number(m.ts) > Number(request.ts) && fromBot(m, reviewer)).map(textOf);
+  if (later.some((text) => !prUrls(text).length)) return true;
+  return prUrls(textOf(request)).every((pr) => later.some((text) => mentionsPr(text, pr)));
 }
 
 /**
@@ -81,7 +92,7 @@ export function answered(messages, request, reviewer) {
  * reply after them. The bot does not receive Slack events, so the monitor runs this to pick them up.
  */
 export async function pendingMentions(slack, reviewer, { cursorUserId = null, ...options } = {}) {
-  const pending = await pendingBotMentions(slack, reviewer, { asks: askPattern(cursorUserId, REVIEW_VERBS), ...options });
+  const pending = await pendingBotMentions(slack, reviewer, { asks: askPattern(cursorUserId, REVIEW_VERBS), isAnswered: answeredEveryPr, ...options });
   return pending.map((item) => ({ ...item, prs: prUrls(textOf(item.request)) })).filter((item) => item.prs.length);
 }
 
@@ -104,7 +115,7 @@ const fromPerson = (m) => Boolean(m.user) && !m.bot_id && m.subtype !== "bot_mes
  * so the monitor looks for these requests. `minAgeMin` leaves time to the @Cursor agent that may
  * already be handling a request made outside those threads.
  */
-export async function pendingBotMentions(slack, bot, { hours = 26, now = Date.now(), asks = null, minAgeMin = 0 } = {}) {
+export async function pendingBotMentions(slack, bot, { hours = 26, now = Date.now(), asks = null, minAgeMin = 0, isAnswered = answered } = {}) {
   const oldest = secondsAgo(hours, now);
   const newest = (now - minAgeMin * 60 * 1000) / 1000;
   const tag = `<@${bot.userId}>`;
@@ -116,7 +127,7 @@ export async function pendingBotMentions(slack, bot, { hours = 26, now = Date.no
       if (ts < oldest || ts > newest || m.user === bot.userId) continue;
       const text = m.text ?? "";
       const via = text.includes(tag) ? "mention" : asks && fromPerson(m) && asks.test(text) ? "ask" : null;
-      if (!via || answered(messages, m, bot)) continue;
+      if (!via || isAnswered(messages, m, bot)) continue;
       pending.push({ thread_ts: parent.ts, request: m, messages, via });
     }
   }
