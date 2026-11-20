@@ -84,7 +84,7 @@ export function answered(messages, request, reviewer) {
 export function answeredEveryPr(messages, request, reviewer) {
   const later = messages.filter((m) => Number(m.ts) > Number(request.ts) && fromBot(m, reviewer)).map(textOf);
   if (later.some((text) => !prUrls(text).length)) return true;
-  return prUrls(textOf(request)).every((pr) => later.some((text) => mentionsPr(text, pr)));
+  return requestedPrs(request, messages).every((pr) => later.some((text) => mentionsPr(text, pr)));
 }
 
 /**
@@ -93,7 +93,18 @@ export function answeredEveryPr(messages, request, reviewer) {
  */
 export async function pendingMentions(slack, reviewer, { cursorUserId = null, ...options } = {}) {
   const pending = await pendingBotMentions(slack, reviewer, { asks: askPattern(cursorUserId, REVIEW_VERBS), isAnswered: answeredEveryPr, ...options });
-  return pending.map((item) => ({ ...item, prs: prUrls(textOf(item.request)) })).filter((item) => item.prs.length);
+  return pending.map((item) => ({ ...item, prs: requestedPrs(item.request, item.messages) })).filter((item) => item.prs.length);
+}
+
+/**
+ * The PRs a request is about: the ones it links or, when it links none, every PR linked in its
+ * thread, so `@Revisor de PRs revisa` in a PR's thread needs no link.
+ */
+export function requestedPrs(request, messages = []) {
+  const own = prUrls(textOf(request));
+  if (own.length) return own;
+  const seen = new Set();
+  return messages.flatMap((m) => prUrls(textOf(m))).filter((pr) => !seen.has(pr.url) && seen.add(pr.url));
 }
 
 /**

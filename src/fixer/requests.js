@@ -41,7 +41,7 @@ export async function requestFix({ config, reader, poster, thread, requester, fo
   const linked = linkedFixPrs(thread, failure.sourceRepo);
   if (linked.length && !force) {
     throw new FixRefused(`La falla ya tiene PR en su hilo (${linked.map((p) => p.url).join(", ")}). Usa --force para pedir otra corrección.`, {
-      notice: ":information_source: Ya tiene PR en este hilo. Para otra corrección: `@Cursor corrige esta falla, es una corrección nueva`.",
+      notice: ":information_source: Ya tiene PR en este hilo. Para otra corrección: `@Corrector de fallas corrige esta falla, es una corrección nueva`.",
     });
   }
   if (fixInProgress(thread) && !force) throw new FixRefused("El Corrector ya está trabajando en esta falla; responde en el hilo cuando termine.", {

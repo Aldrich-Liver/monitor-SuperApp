@@ -31,8 +31,12 @@ const poster = slackClient({ token });
 const pending = await pendingMentions(reader, reviewer, { hours: Number(args.hours), minAgeMin: Number(args["min-age-min"]), cursorUserId: config.cursorUserId });
 
 let requested = 0;
-for (const item of pending) {
-  const prs = item.prs.filter((p) => appForRepo(config, p.repo));
+const seen = new Set();
+for (const item of pending.sort((a, b) => Number(b.request.ts) - Number(a.request.ts))) {
+  const all = item.prs.filter((p) => !seen.has(`${item.thread_ts} ${p.url}`));
+  for (const p of item.prs) seen.add(`${item.thread_ts} ${p.url}`);
+  if (!all.length) continue;
+  const prs = all.filter((p) => appForRepo(config, p.repo));
   if (!prs.length && !args["dry-run"]) {
     const apps = config.apps.filter((a) => a.sourceRepo).map((a) => a.name);
     const text = `:information_source: Solo reviso PRs de ${apps.join(" o ")}.`;

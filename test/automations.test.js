@@ -300,7 +300,7 @@ test("picks up '@Cursor corrige esta falla' that reached an automation instead o
   assert.equal(askPattern(undefined, FIX_VERBS), null);
 });
 
-test("picks up '@Cursor revisa este PR' with a link that the Revisor hasn't answered", async () => {
+test("picks up '@Cursor revisa este PR' that the Revisor hasn't answered, using the thread's PR when it has no link", async () => {
   const NOW = 1_800_000_000_000;
   const at = (minutesAgo) => String(NOW / 1000 - minutesAgo * 60);
   const reviewer = { userId: "UREV", botId: "BREV" };
@@ -310,7 +310,7 @@ test("picks up '@Cursor revisa este PR' with a link that the Revisor hasn't answ
   };
   const slack = { channel: "C1", history: async () => [top], replies: async (ts) => threads[ts] };
   const pending = await pendingMentions(slack, reviewer, { now: NOW, cursorUserId: "UCURSOR" });
-  assert.deepEqual(pending.map((p) => [p.request.ts, p.prs[0].number]), [[at(10), 14]]);
+  assert.deepEqual(pending.map((p) => [p.request.ts, p.prs.map((pr) => pr.number)]), [[at(20), [14]], [at(10), [14]]]);
   assert.equal((await pendingMentions(slack, reviewer, { now: NOW, cursorUserId: "UOTRO" })).length, 0);
   assert.ok(askPattern("U1", REVIEW_VERBS).test("<@U1> ¿lo revisas?"));
 });

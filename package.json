@@ -29,5 +29,8 @@
     "fix:context": "node src/fixer/context.js",
     "fix:reply": "node src/fixer/reply.js",
     "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@grok/agent-sdk": "0.6.0"
   }
 }
